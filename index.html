@@ -1093,7 +1093,10 @@ function syncSettingsUI() {
   populateModelPreset();
   $('typeRow').style.display = (currentDraft.mode === 'complaint' || currentDraft.mode === 'answer' || currentDraft.mode === 'generic') ? '' : 'none';
 }
-$('setProvider').addEventListener('change', syncSettingsUI);
+$('setProvider').addEventListener('change', function () {
+  state.provider = this.value;   // 先记住用户选中的服务商，再刷新界面
+  syncSettingsUI();
+});
 
 function saveSettings() {
   const p = $('setProvider').value;
