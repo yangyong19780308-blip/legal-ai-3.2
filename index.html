@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>法务AI 3.2 · 基层治理版</title>
+<style>
+:root{
+  --primary:#1b5e7d; --primary2:#2680a6; --accent:#c9a227; --accent2:#e0b83e;
+  --bg:#f2f5f8; --card:#ffffff; --line:#dfe6ec; --text:#24313d; --muted:#6b7a88;
+  --ok:#1d8a5f; --err:#c0392b; --warn:#b9770e; --shadow:0 1px 3px rgba(27,46,61,.08),0 4px 14px rgba(27,46,61,.06);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"微软雅黑","PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);font-size:15px;min-height:100vh;display:flex;flex-direction:column}
+.top{background:linear-gradient(135deg,#123f57,#1b6f8f);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:50;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.brand{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700}
+.brand .logo{font-size:20px}
+.brand small{display:block;font-size:11px;font-weight:400;opacity:.85}
+.top-right{display:flex;align-items:center;gap:8px}
+.model-pill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:4px 10px;font-size:12px;white-space:nowrap;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
+.icon-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;width:36px;height:36px;font-size:17px;cursor:pointer}
+.tabs{position:sticky;top:58px;z-index:45;background:#fff;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;box-shadow:0 1px 3px rgba(27,46,61,.06)}
+.tabs button{flex:0 0 auto;border:none;background:none;padding:12px 14px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;white-space:nowrap}
+.tabs button.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:700}
+.tabs button:hover{color:var(--primary)}
+main{flex:1;width:100%;max-width:1020px;margin:0 auto;padding:16px}
+.tab{display:none}
+.tab.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h2{font-size:16px;margin-bottom:10px;color:var(--primary)}
+.card h2 small{font-size:12px;color:var(--muted);font-weight:400}
+.sub{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:12px}
+label.fld{display:block;font-size:13px;font-weight:600;color:var(--text);margin:12px 0 5px}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:10px 12px;border:1px solid #ccd6de;border-radius:9px;font-size:15px;font-family:inherit;background:#fff;color:var(--text)}
+textarea{min-height:120px;resize:vertical;line-height:1.7}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2);box-shadow:0 0 0 2px rgba(38,128,166,.15)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;min-height:42px;transition:filter .15s}
+.btn:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff}
+.btn-gold{background:linear-gradient(135deg,#a88418,var(--accent2));color:#fff}
+.btn-green{background:linear-gradient(135deg,#177a52,#27a06b);color:#fff}
+.btn-red{background:linear-gradient(135deg,#a93226,#cf4436);color:#fff}
+.btn-line{background:#fff;color:var(--primary);border:1px solid var(--primary2)}
+.btn-ghost{background:#f0f3f6;color:var(--text)}
+.btn-sm{padding:6px 10px;font-size:13px;min-height:34px;border-radius:7px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px}
+.warn-box{background:#fff8e6;border:1px solid #f0dcae;border-radius:10px;padding:10px 12px;font-size:13px;color:#7a5b0c;line-height:1.7;margin:10px 0}
+.ok-box{background:#eafaf1;border:1px solid #b9e6cd;border-radius:10px;padding:10px 12px;font-size:13px;color:#145a38;line-height:1.7;margin:10px 0}
+.err-box{background:#fdecea;border:1px solid #f3bcb6;border-radius:10px;padding:10px 12px;font-size:13px;color:#7c241c;line-height:1.7;margin:10px 0}
+.loading{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#eef6fb;border:1px solid #c9e2f0;border-radius:10px;font-size:14px;color:var(--primary);margin:10px 0}
+.spin{width:18px;height:18px;border:3px solid #c9e2f0;border-top-color:var(--primary);border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.doc-body{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:18px 20px;font-family:"仿宋","FangSong","STFangsong",serif;font-size:16px;line-height:2;white-space:pre-wrap;word-break:break-word;max-height:70vh;overflow:auto}
+.doc-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.doc-tabs button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+.doc-tabs button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.tbl{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+.tbl th,.tbl td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.tbl th{background:#eef3f7;font-weight:600;color:var(--primary)}
+.case-card{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.case-card .tt{font-weight:600;font-size:15px}
+.case-card .mt{font-size:12px;color:var(--muted)}
+.chip{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:20px;padding:7px 12px;font-size:13px;cursor:pointer;margin:0 8px 8px 0;color:var(--primary)}
+.chip:hover{background:#eef6fb;border-color:var(--primary2)}
+.quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.quick{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;transition:transform .12s;box-shadow:var(--shadow)}
+.quick:hover{transform:translateY(-2px)}
+.quick .ic{font-size:26px}
+.quick .nm{font-size:14px;font-weight:600;margin-top:6px}
+.quick .ds{font-size:12px;color:var(--muted);margin-top:3px}
+.steps{list-style:none;position:relative;padding-left:22px}
+.steps li{position:relative;padding:0 0 18px 6px;border-left:2px solid #cfe0ea}
+.steps li:last-child{border-left-color:transparent}
+.steps li::before{content:attr(data-n);position:absolute;left:-14px;top:-2px;width:24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.steps li b{display:block;margin-bottom:2px}
+.steps li span{font-size:13px;color:var(--muted)}
+.footer{text-align:center;color:var(--muted);font-size:12px;padding:16px;line-height:1.8;border-top:1px solid var(--line);background:#fff}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#24313d;color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;z-index:200;opacity:0;pointer-events:none;transition:opacity .25s;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.scenario-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.scenario{border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;background:#fff;text-align:left;font-family:inherit;font-size:14px}
+.scenario:hover{border-color:var(--primary2);background:#eef6fb}
+.scenario .sic{font-size:20px}
+.scenario .snm{font-weight:600;margin-top:4px}
+.scenario .sds{font-size:12px;color:var(--muted);margin-top:2px}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+.stat .v{font-size:22px;font-weight:700;color:var(--primary)}
+.stat .k{font-size:12px;color:var(--muted);margin-top:2px}
+@media (max-width:720px){
+  .top{top:0}
+  .tabs{top:0}
+  .brand{font-size:15px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .quick-grid{grid-template-columns:repeat(2,1fr)}
+  .scenario-grid{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:repeat(3,1fr)}
+  .btn{width:auto}
+  main{padding:12px}
+  .doc-body{font-size:15px;padding:14px}
+}
+</style>
+</head>
+
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">⚖</span><div>法务AI 3.2<small>基层治理版 · 手机/电脑通用</small></div></div>
+  <div class="top-right">
+    <span class="model-pill" id="modelPill">模型未设置</span>
+    <button class="icon-btn" onclick="goTab('settings')" title="模型与费用设置">⚙️</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="dashboard" class="active">🏠 案件台</button>
+  <button data-tab="draft">📝 材料撰写</button>
+  <button data-tab="evidence">🧾 证据分析</button>
+  <button data-tab="research">📚 法律研究</button>
+  <button data-tab="flow">🗺 诉讼流程</button>
+  <button data-tab="govern">🏘 基层治理</button>
+  <button data-tab="settings">⚙️ 模型与费用</button>
+</nav>
+
+<main>
+<!-- ==================== 案件台 ==================== -->
+<section id="tab-dashboard" class="tab active">
+  <div class="card">
+    <h2>欢迎使用法务AI 3.2 <small>粘贴素材 → AI 分析 → 生成文书/证据清单 → 存入案件档案</small></h2>
+    <div class="quick-grid">
+      <div class="quick" onclick="goTab('draft')"><div class="ic">📝</div><div class="nm">材料撰写</div><div class="ds">诉状·答辩·执行·信访</div></div>
+      <div class="quick" onclick="goTab('evidence')"><div class="ic">🧾</div><div class="nm">证据分析</div><div class="ds">证据清单·质证意见</div></div>
+      <div class="quick" onclick="goTab('research')"><div class="ic">📚</div><div class="nm">法律研究</div><div class="ds">法规·实务问答</div></div>
+      <div class="quick" onclick="goTab('flow')"><div class="ic">🗺</div><div class="nm">诉讼流程</div><div class="ds">阶段指引·材料清单</div></div>
+      <div class="quick" onclick="goTab('govern')"><div class="ic">🏘</div><div class="nm">基层治理</div><div class="ds">宅基地·土地·邻里等</div></div>
+      <div class="quick" onclick="goTab('settings')"><div class="ic">⚙️</div><div class="nm">模型与费用</div><div class="ds">多模型·用量台账</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">📁 案件档案</h2>
+      <button class="btn btn-primary btn-sm" onclick="toggleNewCase()">＋ 新建案件</button>
+    </div>
+    <div id="caseForm" style="display:none">
+      <label class="fld">案件名称</label>
+      <input type="text" id="caseTitle" placeholder="例如：张三诉李四民间借贷案">
+      <label class="fld">案情素材</label>
+      <textarea id="caseMaterial" placeholder="把案情、证据、诉求等素材贴在这里，之后可以一键带到材料撰写/证据分析"></textarea>
+      <div class="btnrow">
+        <button class="btn btn-primary" onclick="saveNewCase()">💾 保存案件</button>
+        <button class="btn btn-ghost" onclick="toggleNewCase(false)">取消</button>
+      </div>
+    </div>
+    <div id="caseList" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>💡 快速上手</h2>
+    <div class="sub">
+      1. 首次使用先到「⚙️ 模型与费用」填入 API 密钥（DeepSeek / 智谱免费 / 千问任选其一）。<br>
+      2. 到「📝 材料撰写」粘贴素材，选择文书类型，AI 自动生成。<br>
+      3. 生成结果可复制、导出 Word、打印，或存入案件档案长期保存。
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 材料撰写 ==================== -->
+<section id="tab-draft" class="tab">
+  <div class="card">
+    <h2>📝 材料撰写 <small>起诉状一律成对生成「要素式＋传统式」两份；强制执行一律要素式</small></h2>
+    <label class="fld">① 选择文书类型</label>
+    <div class="btnrow" id="draftModeRow">
+      <button class="btn btn-line btn-sm mode-chip active" data-mode="complaint">起诉状（双版）</button>
+      <button class="btn btn-line btn-sm mode-chip" data-mode="answer">答辩状</button>
+      <button class="btn btn-line btn-sm mode-chip" data-mode="exec">强制执行（要素式）</button>
+      <button class="btn btn-line btn-sm mode-chip" data-mode="petition">信访材料</button>
+      <button class="btn btn-line btn-sm mode-chip" data-mode="change">变更诉讼请求</button>
+      <button class="btn btn-line btn-sm mode-chip" data-mode="generic">其他文书</button>
+    </div>
+
+    <div id="typeRow">
+      <label class="fld">② 案由（起诉状/答辩状/其他文书选填，AI 也会自动识别）</label>
+      <select id="caseTypeSel"><option value="">—— 请选择案由（可留空让 AI 识别）——</option></select>
+    </div>
+
+    <label class="fld">③ 粘贴素材（案情 / 诉求 / 判决书 / 说明）</label>
+    <textarea id="draftMaterial" placeholder="把案情、诉求、判决书全文或想办的事贴进来，越详细越好。&#10;例如：原告张三，2023年6月借给被告李四5万元，约定月息1分，2024年6月到期未还，多次催收无果，有借条和转账记录……"></textarea>
+    <div class="btnrow">
+      <button class="btn btn-primary" id="btnDraftStart" onclick="draftAnalyze()">🚀 AI 分析并生成</button>
+      <button class="btn btn-ghost" onclick="clearDraft()">🗑 清空</button>
+    </div>
+  </div>
+
+  <div id="draftPrep" style="display:none">
+    <div class="card">
+      <h2>④ AI 分析结果 <small>请核对，可修改后重新生成</small></h2>
+      <div class="sub" id="draftPrepText"></div>
+      <div class="btnrow">
+        <button class="btn btn-gold" id="btnDraftGenerate" onclick="draftGenerate()">✍️ 按以上信息生成文书</button>
+        <button class="btn btn-line btn-sm" onclick="draftAnalyze(true)">🔄 重新分析</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="draftResult" style="display:none">
+    <div class="card">
+      <h2>⑤ 文书预览 <small>成稿即用，可直接复制 / 导出 / 打印</small></h2>
+      <div class="doc-tabs" id="docTabs"></div>
+      <div class="doc-body" id="docBody"></div>
+      <div class="btnrow">
+        <button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>
+        <button class="btn btn-gold" onclick="exportDoc()">📥 导出 Word</button>
+        <button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>
+        <button class="btn btn-line" onclick="selfCheck()">🔍 AI 自检复核</button>
+        <button class="btn btn-ghost" onclick="saveDraftToCase()">💾 存入案件档案</button>
+      </div>
+      <div id="selfCheckArea"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 证据分析 ==================== -->
+<section id="tab-evidence" class="tab">
+  <div class="card">
+    <h2>🧾 证据分析 <small>AI 帮你整理证据清单、证明目的与质证/补证建议</small></h2>
+    <label class="fld">粘贴案情 + 手头证据（微信聊天、转账记录、借条、合同、照片等尽量写全）</label>
+    <textarea id="evMaterial" placeholder="例如：原告张三借给被告李四5万元，有：1. 借条（李四签字按手印）；2. 微信转账记录 3万元；3. 现金交付 2万元无凭证；4. 催收聊天记录……"></textarea>
+    <div class="btnrow">
+      <button class="btn btn-primary" id="btnEvRun" onclick="evidenceRun()">🔍 生成证据清单与分析</button>
+    </div>
+  </div>
+  <div id="evResult"></div>
+</section>
+
+<!-- ==================== 法律研究 ==================== -->
+<section id="tab-research" class="tab">
+  <div class="card">
+    <h2>📚 法律研究 <small>AI 依据你的问题做法律研究（AI 生成仅供参考）</small></h2>
+    <label class="fld">输入法律问题</label>
+    <textarea id="rsQ" style="min-height:80px" placeholder="例如：民间借贷年利率超过多少不受保护？诉讼时效是几年？强制执行申请要准备哪些材料？"></textarea>
+    <div class="btnrow">
+      <button class="btn btn-primary" id="btnRsRun" onclick="researchRun()">🔍 研究</button>
+    </div>
+    <div style="margin-top:10px">
+      <button class="chip" data-q="借款利息超过多少不受法律保护？">利息上限</button>
+      <button class="chip" data-q="民间借贷诉讼时效是几年？从哪天起算？">诉讼时效</button>
+      <button class="chip" data-q="强制执行申请的流程和所需材料？">强制执行</button>
+      <button class="chip" data-q="离婚时财产和子女抚养怎么处理？">离婚要点</button>
+      <button class="chip" data-q="农村宅基地申请和确权的条件？">宅基地</button>
+      <button class="chip" data-q="农民工讨薪有哪些合法途径？">讨薪途径</button>
+    </div>
+  </div>
+  <div id="rsResult"></div>
+</section>
+
+<!-- ==================== 诉讼流程 ==================== -->
+<section id="tab-flow" class="tab">
+  <div class="card">
+    <h2>🗺 民事诉讼一审流程 <small>常见路径，具体以法院通知为准</small></h2>
+    <ol class="steps">
+      <li data-n="1"><b>起诉与立案</b><span>准备起诉状（双版）、证据清单与证据副本、身份证明 → 到有管辖权的法院立案（或网上立案）。符合条件 7 日内决定是否立案。</span></li>
+      <li data-n="2"><b>送达与答辩期</b><span>法院向被告送达起诉状副本，被告 15 日内提交答辩状（涉外 30 日）。</span></li>
+      <li data-n="3"><b>举证与开庭</b><span>按法院指定期限提交证据；开庭前可申请财产保全、调查取证、鉴定等。</span></li>
+      <li data-n="4"><b>开庭审理</b><span>法庭调查 → 举证质证 → 法庭辩论 → 最后陈述。小额诉讼/简易程序更快。</span></li>
+      <li data-n="5"><b>判决与上诉</b><span>判决书送达之日起 15 日内可上诉（裁定 10 日）；不上诉则判决生效。</span></li>
+      <li data-n="6"><b>强制执行</b><span>义务人不履行生效文书，权利人 2 年内向一审法院（或同级的被执行财产所在地法院）申请强制执行。</span></li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2>📋 各阶段材料清单</h2>
+    <table class="tbl">
+      <tr><th>阶段</th><th>常用材料</th></tr>
+      <tr><td>立案</td><td>起诉状（正本＋按被告人数副本）、身份证明、证据清单及证据复印件、授权委托材料（如委托）</td></tr>
+      <tr><td>审理</td><td>答辩状、证据原件（庭上核对）、质证意见、代理意见、鉴定/调查取证申请</td></tr>
+      <tr><td>执行</td><td>强制执行申请书（要素式）、生效判决书/调解书、生效证明、被执行人财产线索</td></tr>
+      <tr><td>特殊</td><td>财产保全申请书、管辖权异议申请书、变更诉讼请求申请书、撤诉申请书</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>⏱ 常用时限速查</h2>
+    <table class="tbl">
+      <tr><th>事项</th><th>时限</th></tr>
+      <tr><td>答辩期</td><td>收到起诉状副本之日起 15 日</td></tr>
+      <tr><td>上诉期</td><td>判决 15 日 / 裁定 10 日</td></tr>
+      <tr><td>申请执行</td><td>履行期间届满之日起 2 年</td></tr>
+      <tr><td>诉讼时效（一般）</td><td>3 年，自知道或应当知道权利受损及义务人之日起算</td></tr>
+      <tr><td>离婚判决生效限制</td><td>判决不准离婚后 6 个月内无新理由不得再起诉</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== 基层治理 ==================== -->
+<section id="tab-govern" class="tab">
+  <div class="card">
+    <h2>🏘 农村基层治理纠纷场景 <small>按场景填写要素，AI 生成对应文书</small></h2>
+    <div class="scenario-grid" id="governGrid"></div>
+  </div>
+  <div id="governForm" style="display:none">
+    <div class="card">
+      <h2 id="governFormTitle">场景</h2>
+      <div id="governFields"></div>
+      <div class="btnrow">
+        <button class="btn btn-primary" id="btnGovernRun" onclick="governRun()">✍️ 生成文书</button>
+        <button class="btn btn-ghost" onclick="governBack()">← 返回选场景</button>
+      </div>
+    </div>
+  </div>
+  <div id="governResult"></div>
+</section>
+
+<!-- ==================== 模型与费用 ==================== -->
+<section id="tab-settings" class="tab">
+  <div class="card">
+    <h2>⚙️ 模型与费用管理 <small>支持多模型切换，密钥只存在本机浏览器</small></h2>
+    <label class="fld">① 服务商</label>
+    <select id="setProvider">
+      <option value="deepseek">DeepSeek（推荐，便宜）</option>
+      <option value="zhipu">智谱 GLM-4-Flash（永久免费）</option>
+      <option value="qwen">通义千问（阿里云）</option>
+      <option value="custom">自定义（OpenAI 兼容接口）</option>
+    </select>
+    <label class="fld">② API 密钥 <span class="hint" id="keyHint"></span></label>
+    <input type="password" id="setKey" placeholder="粘贴 API 密钥，仅保存在本机浏览器">
+    <div class="grid2">
+      <div>
+        <label class="fld">③ 模型名称</label>
+        <input type="text" id="setModel" placeholder="例如 deepseek-chat / glm-4-flash / qwen-plus">
+      </div>
+      <div>
+        <label class="fld">④ 接口地址（自定义时填写）</label>
+        <input type="text" id="setBase" placeholder="https://api.example.com/v1/chat/completions">
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label class="fld">输入单价（元/百万 tokens）</label>
+        <input type="number" id="setRateIn" step="0.1" min="0" value="2">
+      </div>
+      <div>
+        <label class="fld">输出单价（元/百万 tokens）</label>
+        <input type="number" id="setRateOut" step="0.1" min="0" value="3">
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="btn btn-primary" onclick="saveSettings()">💾 保存设置</button>
+      <button class="btn btn-line" onclick="testConnection()">🔌 测试连接</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💰 用量与费用台账</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v" id="statCalls">0</div><div class="k">调用次数</div></div>
+      <div class="stat"><div class="v" id="statTokens">0</div><div class="k">总 tokens</div></div>
+      <div class="stat"><div class="v" id="statCost">¥0.00</div><div class="k">估算费用</div></div>
+    </div>
+    <div style="max-height:280px;overflow:auto">
+      <table class="tbl" style="min-width:520px">
+        <thead><tr><th>时间</th><th>模型</th><th>输入</th><th>输出</th><th>费用(¥)</th><th>用途</th></tr></thead>
+        <tbody id="ledgerBody"></tbody>
+      </table>
+    </div>
+    <div class="btnrow">
+      <button class="btn btn-ghost btn-sm" onclick="clearLedger()">🗑 清空台账</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🗄 数据管理 <small>案件档案、设置与台账都存在本机浏览器</small></h2>
+    <div class="btnrow">
+      <button class="btn btn-line btn-sm" onclick="exportAll()">📤 导出全部数据（JSON）</button>
+      <button class="btn btn-line btn-sm" onclick="document.getElementById('importFile').click()">📥 导入数据</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importAll(event)">
+      <button class="btn btn-red btn-sm" onclick="clearAll()">🗑 清空全部数据</button>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <b>重要提示：</b>本工具由 AI 生成内容，仅供参考，不构成正式法律意见。正式提交前请自行核实，并以受理机关要求为准。<br>
+  已覆盖最高法 67 类要素式示范文本案由；起诉状成对生成「要素式＋传统式」。素材与密钥只在本机浏览器处理，不会上传服务器。
+</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== 法务AI 3.2 · 核心逻辑（一） ===== */
+'use strict';
+
+const STORE_KEY = 'fawu32_v1';
+const PROVIDERS = {
+  deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', hint: '在 platform.deepseek.com 创建 API Key（格式 sk-…），DeepSeek 价格低、适合文书生成' },
+  zhipu: { label: '智谱 GLM', base: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash', hint: '在 open.bigmodel.cn 实名认证后创建 API Key，glm-4-flash 永久免费，余额不足时可一键切到这里' },
+  qwen: { label: '通义千问', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', hint: '在阿里云百炼（bailian.console.aliyun.com）创建 API Key' },
+  custom: { label: '自定义', base: '', model: '', hint: '填写 OpenAI 兼容的接口地址与模型名称' }
+};
+
+const DEFAULT_STATE = {
+  provider: 'deepseek',
+  keys: { deepseek: '', zhipu: '', qwen: '', custom: '' },
+  models: { deepseek: 'deepseek-chat', zhipu: 'glm-4-flash', qwen: 'qwen-plus', custom: '' },
+  bases: { deepseek: '', zhipu: '', qwen: '', custom: '' },
+  rates: { deepseek: { in: 2, out: 3 }, zhipu: { in: 0, out: 0 }, qwen: { in: 0.8, out: 2 }, custom: { in: 1, out: 2 } },
+  cases: [],
+  ledger: []
+};
+
+const CASE_TYPES = [{"g":"答辩状","items":["行政答辩状（通用）"]},{"g":"执行/申请类申请书","items":["不予执行仲裁裁决、调解书或公证债权文书","参与分配","强制执行","执行复议","执行异议","执行担保","执行监督","暂时解除乘坐飞机、高铁限制措施","确认优先购买权"]},{"g":"行政起诉状","items":["不履行法定职责","专利无效行政纠纷","专利申请驳回复审行政纠纷","商标撤销复审行政纠纷","商标无效行政纠纷","商标申请驳回复审纠纷","国有土地上房屋征收决定","垄断纠纷","工伤保险资格或者待遇认定","政府信息公开","行政协议","行政处罚","行政复议","行政强制执行","行政补偿","行政许可","行政赔偿"]},{"g":"民事起诉状","items":["不正当竞争纠纷","买卖合同纠纷","人身保险合同纠纷","侵害发明专利权纠纷","侵害商业秘密纠纷","侵害商标权纠纷","侵害外观设计专利权纠纷","侵害植物新品种权纠纷","侵害著作权及邻接权纠纷","保证保险合同纠纷","信用卡纠纷","劳动争议纠纷","建设工程施工合同纠纷","房屋买卖合同纠纷","房屋租赁合同纠纷","技术合同纠纷","机动车交通事故责任纠纷","民间借贷纠纷","海上、通海水域人身损害责任纠纷","海上、通海水域货运代理合同纠纷","物业服务合同纠纷","环境污染民事公益诉讼","生态环境损害赔偿诉讼","生态破坏民事公益诉讼","离婚纠纷","船员劳务合同纠纷","船舶碰撞损害责任纠纷","融资租赁合同纠纷","证券虚假陈述责任纠纷","财产损失保险合同纠纷","责任保险合同纠纷","金融借款合同纠纷"]},{"g":"刑事自诉状","items":["侮辱案","刑事改判无罪赔偿","拒不执行判决、裁定案","诽谤案","违法刑事拘留赔偿","重婚案"]},{"g":"国家赔偿申请书","items":["怠于履行监管职责致伤致死赔偿","错误执行赔偿"]}];
+
+let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+let currentDraft = { mode: 'complaint', caseType: '', material: '', analysis: '', docs: [], caseId: null };
+let curDocText = '';
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    state = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_STATE)), saved);
+  } catch (e) { console.warn('本地数据读取失败', e); }
+}
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { console.warn('本地保存失败', e); }
+}
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? '' : s); }
+function escHtml(s) {
+  return esc(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function toast(msg, ms) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms || 2400);
+}
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function today() {
+  const d = new Date();
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日';
+}
+
+/* ---------- 页面切换 ---------- */
+function goTab(name) {
+  document.querySelectorAll('.tab').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  const el = $('tab-' + name);
+  if (el) el.classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+document.querySelectorAll('.tabs button').forEach(b => {
+  b.addEventListener('click', () => goTab(b.dataset.tab));
+});
+
+/* ---------- 通用加载提示 ---------- */
+function showLoading(container, text) {
+  hideLoading();
+  const d = document.createElement('div');
+  d.className = 'loading';
+  d.id = 'loadingBox';
+  d.innerHTML = '<span class="spin"></span><span>' + escHtml(text || 'AI 正在处理，请稍候…') + '</span>';
+  (typeof container === 'string' ? $(container) : container).appendChild(d);
+}
+function hideLoading() {
+  const d = $('loadingBox');
+  if (d) d.remove();
+}
+
+/* ---------- 统一 AI 调用（多模型 + 费用台账） ---------- */
+function estCost(p, inT, outT) {
+  const r = (state.rates && state.rates[p]) || DEFAULT_STATE.rates[p] || { in: 0, out: 0 };
+  return ((inT || 0) * r.in + (outT || 0) * r.out) / 1000000;
+}
+async function callLLM(messages, opts) {
+  opts = opts || {};
+  const p = state.provider;
+  const base = (state.bases && state.bases[p]) || PROVIDERS[p].base;
+  const model = (state.models && state.models[p]) || PROVIDERS[p].model;
+  const key = state.keys && state.keys[p];
+  if (!key) {
+    const err = new Error('未配置 API 密钥，请先到「模型与费用」填写');
+    err.needSetup = true;
+    throw err;
+  }
+  if (!base) {
+    const err = new Error('未配置接口地址');
+    err.needSetup = true;
+    throw err;
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeout || 180000);
+  let res;
+  try {
+    res = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: opts.temp != null ? opts.temp : 0.3,
+        max_tokens: opts.maxTokens || 8192,
+        stream: false
+      }),
+      signal: ctrl.signal
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('请求超时（180 秒），请重试或换更快的模型');
+    throw new Error('网络请求失败：' + e.message);
+  }
+  clearTimeout(timer);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const j = await res.json();
+      detail = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
+    } catch (e) {}
+    const t = String(detail).toLowerCase();
+    if (res.status === 401) throw new Error('API 密钥无效或已过期：' + String(detail).slice(0, 120));
+    if (res.status === 402 || t.indexOf('insufficient') >= 0 || t.indexOf('余额') >= 0 || t.indexOf('balance') >= 0) {
+      throw new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4-flash）');
+    }
+    if (res.status === 429) throw new Error('请求过于频繁（限流），请稍等几秒再试');
+    throw new Error('接口返回错误（' + res.status + '）：' + (detail || '未知错误').slice(0, 200));
+  }
+  const j = await res.json();
+  const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+  const u = j.usage || {};
+  const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
+  const cost = estCost(p, inT, outT);
+  state.ledger.unshift({ t: Date.now(), provider: p, model: model, in: inT, out: outT, cost: cost, note: opts.note || '' });
+  if (state.ledger.length > 500) state.ledger.length = 500;
+  saveState();
+  renderLedger();
+  updateStats();
+  return { text: text, inT: inT, outT: outT, cost: cost };
+}
+
+/* ---------- 文书系统提示词 ---------- */
+const SYS = '你是“法务AI 3.2”的法律文书助手，服务对象是基层法律工作者和普通群众。严格规则：1）只依据用户提供的素材撰写，不编造事实、金额、日期、案号、人名；2）素材中缺失的信息一律写“（待补充）”，绝不猜测；3）引用法律条文必须真实，不确定就写“依据相关规定”；4）金额、利率、起算日等必须具体明确；5）文书末尾的具状人/申请人姓名与日期留空；6）标题居中，正文规范，段落清晰。';
+const SYS_RESEARCH = '你是“法务AI 3.2”的法律研究助手。要求：1）回答必须引用真实存在的法律、行政法规、司法解释名称及条文号；2）不确定的内容明确说明；3）分点作答，便于阅读；4）最后单独一行注明“本回答由 AI 生成，仅供参考，不构成法律意见”。';
+
+/* ==================== 案件档案 ==================== */
+function toggleNewCase(show) {
+  const f = $('caseForm');
+  const showF = show == null ? f.style.display === 'none' : show;
+  f.style.display = showF ? '' : 'none';
+}
+function saveNewCase() {
+  const title = $('caseTitle').value.trim() || '未命名案件';
+  const material = $('caseMaterial').value.trim();
+  if (!material && !confirm('案件没有任何素材，仍要保存吗？')) return;
+  state.cases.unshift({
+    id: Date.now().toString(36),
+    title: title,
+    material: material,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    docs: []
+  });
+  saveState();
+  renderCases();
+  toggleNewCase(false);
+  $('caseTitle').value = '';
+  $('caseMaterial').value = '';
+  toast('案件已保存');
+}
+function deleteCase(id) {
+  if (!confirm('确定删除这个案件吗？删除后不可恢复。')) return;
+  state.cases = state.cases.filter(c => c.id !== id);
+  saveState();
+  renderCases();
+  toast('案件已删除');
+}
+function openCase(id) {
+  const c = state.cases.find(x => x.id === id);
+  if (!c) return;
+  currentDraft = { mode: 'complaint', caseType: '', material: c.material || '', analysis: '', docs: c.docs || [], caseId: c.id };
+  setDraftMode('complaint');
+  $('draftMaterial').value = c.material || '';
+  $('draftPrep').style.display = 'none';
+  $('draftResult').style.display = 'none';
+  if (c.docs && c.docs.length) {
+    renderDraftDocs(c.docs);
+    $('draftResult').style.display = '';
+  }
+  goTab('draft');
+  toast('已打开案件：' + c.title);
+}
+function renderCases() {
+  const box = $('caseList');
+  if (!state.cases.length) {
+    box.innerHTML = '<div class="sub" style="margin:8px 0 0">还没有案件。点「新建案件」开始，或在「材料撰写」生成文书后一键存入。</div>';
+    return;
+  }
+  box.innerHTML = state.cases.map(c => {
+    const n = (c.docs || []).length;
+    return '<div class="case-card">' +
+      '<div><div class="tt">' + escHtml(c.title) + '</div>' +
+      '<div class="mt">更新于 ' + fmtTime(c.updatedAt) + ' · 文书 ' + n + ' 份</div></div>' +
+      '<div style="display:flex;gap:6px;flex-shrink:0">' +
+      '<button class="btn btn-primary btn-sm" onclick="openCase(\'' + c.id + '\')">打开</button>' +
+      '<button class="btn btn-red btn-sm" onclick="deleteCase(\'' + c.id + '\')">删除</button></div></div>';
+  }).join('');
+}
+function saveDraftToCase() {
+  const texts = currentDraft.docs.map(d => d.text).filter(t => t);
+  if (!texts.length) { toast('当前没有可保存的文书'); return; }
+  const title = (currentDraft.material || '').split('\n')[0].slice(0, 24) || '未命名案件';
+  let c;
+  if (currentDraft.caseId) {
+    c = state.cases.find(x => x.id === currentDraft.caseId);
+  }
+  if (!c) {
+    c = { id: Date.now().toString(36), title: title, material: currentDraft.material, createdAt: Date.now(), docs: [] };
+    state.cases.unshift(c);
+  } else {
+    c.title = c.title || title;
+    c.material = currentDraft.material || c.material;
+  }
+  c.docs = currentDraft.docs;
+  c.updatedAt = Date.now();
+  currentDraft.caseId = c.id;
+  saveState();
+  renderCases();
+  toast('已存入案件档案');
+}
+
+/* ==================== 材料撰写 ==================== */
+const MODE_NAMES = {
+  complaint: '起诉状（双版）', answer: '答辩状', exec: '强制执行申请书（要素式）',
+  petition: '信访反映材料', change: '变更诉讼请求申请书', generic: '其他文书'
+};
+function setDraftMode(mode) {
+  currentDraft.mode = mode;
+  document.querySelectorAll('#draftModeRow .mode-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  $('typeRow').style.display = (mode === 'complaint' || mode === 'answer' || mode === 'generic') ? '' : 'none';
+}
+document.querySelectorAll('#draftModeRow .mode-chip').forEach(b => {
+  b.addEventListener('click', () => setDraftMode(b.dataset.mode));
+});
+
+function populateCaseTypes() {
+  const sel = $('caseTypeSel');
+  sel.innerHTML = '<option value="">—— 请选择案由（可留空让 AI 识别）——</option>';
+  CASE_TYPES.forEach(g => {
+    const og = document.createElement('optgroup');
+    og.label = g.g;
+    g.items.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n;
+      o.textContent = n;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+}
+
+async function draftAnalyze(force) {
+  const material = $('draftMaterial').value.trim();
+  if (!material) { toast('请先粘贴素材'); return; }
+  const mode = currentDraft.mode;
+  currentDraft.material = material;
+  const btn = $('btnDraftStart');
+  btn.disabled = true;
+  $('draftPrep').style.display = '';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在分析素材，识别文书类型与关键要素…</span>';
+  try {
+    const prompt = '请分析下面的素材，判断应出具什么文书，并整理关键要素。\n目标文书类型：' + MODE_NAMES[mode] + '\n素材：\n' + material +
+      '\n\n请按以下格式输出（不要用表格）：\n文书类型：…\n案由：…\n当事人：…\n关键事实：1)… 2)…\n风险与注意（时效/管辖/证据/利率金额等）：1)… 2)…\n缺失信息（需要当事人补充的）：1)… 2)…';
+    const r = await callLLM([
+      { role: 'system', content: SYS },
+      { role: 'user', content: prompt }
+    ], { temp: 0.2, note: '材料分析·' + MODE_NAMES[mode] });
+    currentDraft.analysis = r.text;
+    const caseTypeMatch = r.text.match(/案由[：:]\s*(.+)/);
+    if (caseTypeMatch && caseTypeMatch[1].replace(/[（(].*?[)）]/g, '').trim().length < 30) {
+      currentDraft.caseType = caseTypeMatch[1].trim();
+      $('caseTypeSel').value = currentDraft.caseType;
+    }
+    $('draftPrepText').innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.8">' + escHtml(r.text) + '</pre>';
+    $('draftPrep').style.display = '';
+  } catch (e) {
+    if (e.needSetup) { goTab('settings'); }
+    $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function draftPrompt(mode) {
+  const material = currentDraft.material;
+  const caseType = $('caseTypeSel').value || currentDraft.caseType || '';
+  if (mode === 'complaint') {
+    return '请根据素材生成起诉状，一案两份、内容一致：\n' +
+      '第一份以“【要素式】' + (caseType || '民事起诉状') + '”为标题：按最高法要素式示范文本结构——当事人信息、诉讼请求和依据、事实和理由、证据清单、此致XX人民法院。\n' +
+      '第二份以“【传统式】民事起诉状”为标题：完整叙述式——标题、当事人、诉讼请求、事实与理由、证据清单、此致。\n' +
+      '两份之间用单独一行“=====要素式完毕=====”分隔。案由（如有）：' + (caseType || '由你判断') + '。\n素材：\n' + material;
+  }
+  if (mode === 'exec') {
+    return '请根据下面的判决书/调解书/裁定书或执行素材，生成《强制执行申请书（要素式）》，按最高法要素式示范文本：申请执行人、被执行人、执行依据（案号、作出机关、生效日期）、申请执行事项（本金、利息、费用等金额明确）、事实与理由、此致XX人民法院、附件提示。缺失信息写（待补充）。\n素材：\n' + material;
+  }
+  if (mode === 'petition') {
+    return '请生成规范的《信访反映材料》：信访人信息、被反映单位/人员、反映事项、事实经过、诉求、联系方式。缺失写（待补充），语气客观。\n素材：\n' + material;
+  }
+  if (mode === 'change') {
+    return '请生成《变更诉讼请求申请书》：申请人、被申请人、案号（如有）、原诉讼请求、变更后诉讼请求、变更理由、此致XX人民法院。缺失写（待补充）。\n素材：\n' + material;
+  }
+  if (mode === 'answer') {
+    return '请生成《民事答辩状》：答辩人、被答辩人、案号（如有）、答辩请求、针对起诉的事实与理由逐项答辩（认可/不认可及依据）、此致XX人民法院。缺失写（待补充）。案由（如有）：' + (caseType || '由你判断') + '。\n素材：\n' + material;
+  }
+  return '请根据素材生成合适的法律文书（案由：' + (caseType || '由你判断') + '）。缺失信息写（待补充）。\n素材：\n' + material;
+}
+
+async function draftGenerate() {
+  if (!currentDraft.material) { toast('请先粘贴素材'); return; }
+  const mode = currentDraft.mode;
+  $('draftPrep').style.display = '';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在起草文书（' + MODE_NAMES[mode] + '），一般 30~90 秒…</span>';
+  const btn = $('btnDraftGenerate');
+  btn.disabled = true;
+  try {
+    const r = await callLLM([
+      { role: 'system', content: SYS },
+      { role: 'user', content: draftPrompt(mode) }
+    ], { temp: 0.3, note: '生成·' + MODE_NAMES[mode] });
+    const docs = splitDocs(r.text, mode);
+    currentDraft.docs = docs;
+    renderDraftDocs(docs);
+    $('draftPrep').style.display = 'none';
+    $('draftResult').style.display = '';
+    $('selfCheckArea').innerHTML = '';
+    window.scrollTo({ top: $('draftResult').offsetTop - 90, behavior: 'smooth' });
+  } catch (e) {
+    if (e.needSetup) goTab('settings');
+    $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function splitDocs(text, mode) {
+  if (mode === 'complaint') {
+    const parts = text.split('=====要素式完毕=====');
+    if (parts.length >= 2) {
+      return [
+        { name: '要素式起诉状', text: parts[0].trim() },
+        { name: '传统式起诉状', text: parts.slice(1).join(' ').trim() }
+      ];
+    }
+    const m = text.match(/(【传统式】[^]*)/);
+    if (m) {
+      const idx = text.indexOf(m[1]);
+      return [
+        { name: '要素式起诉状', text: text.slice(0, idx).trim() },
+        { name: '传统式起诉状', text: m[1].trim() }
+      ];
+    }
+    return [{ name: MODE_NAMES[mode], text: text.trim() }];
+  }
+  return [{ name: MODE_NAMES[mode], text: text.trim() }];
+}
+
+function renderDraftDocs(docs) {
+  const tabs = $('docTabs');
+  tabs.innerHTML = '';
+  docs.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.textContent = d.name;
+    b.className = i === 0 ? 'active' : '';
+    b.onclick = () => {
+      tabs.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      $('docBody').textContent = d.text;
+      curDocText = d.text;
+      $('selfCheckArea').innerHTML = '';
+    };
+    tabs.appendChild(b);
+  });
+  $('docBody').textContent = docs[0].text;
+  curDocText = docs[0].text;
+}
+
+function clearDraft() {
+  $('draftMaterial').value = '';
+  $('draftPrep').style.display = 'none';
+  $('draftResult').style.display = 'none';
+  $('selfCheckArea').innerHTML = '';
+  currentDraft = { mode: 'complaint', caseType: '', material: '', analysis: '', docs: [], caseId: null };
+  setDraftMode('complaint');
+}
+
+function copyDoc() {
+  const text = curDocText || $('docBody').textContent;
+  if (!text) { toast('没有可复制的内容'); return; }
+  const done = () => toast('已复制到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，请手动选择复制'); }
+  ta.remove();
+}
+function exportDoc() {
+  const text = curDocText || $('docBody').textContent;
+  if (!text) { toast('没有可导出的内容'); return; }
+  const html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>法务文书</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
+  const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '法务文书_' + today().replace(/[年月日]/g, '') + '.doc';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast('已导出 Word（.doc）');
+}
+function printDoc() {
+  const text = curDocText || $('docBody').textContent;
+  if (!text) { toast('没有可打印的内容'); return; }
+  const w = window.open('', '_blank');
+  if (!w) { toast('浏览器拦截了打印窗口，请允许弹窗'); return; }
+  w.document.write("<html><head><meta charset='utf-8'><title>法务文书</title><style>body{font-family:仿宋,SimSun;font-size:16px;line-height:2;padding:40px;}pre{white-space:pre-wrap;font-family:仿宋,SimSun;}</style></head><body><pre>" + escHtml(text) + "</pre><script>window.onload=function(){window.print();}<\/script></body></html>");
+  w.document.close();
+}
+async function selfCheck() {
+  const text = curDocText || $('docBody').textContent;
+  if (!text) { toast('请先生成文书'); return; }
+  const box = $('selfCheckArea');
+  box.innerHTML = '<span class="loading"><span class="spin"></span>AI 正在复核文书…</span>';
+  try {
+    const r = await callLLM([
+      { role: 'system', content: SYS },
+      { role: 'user', content: '请复核以下法律文书，逐条指出：1）事实、金额、日期是否与素材一致；2）法律依据是否准确；3）格式是否规范；4）缺失项。只输出问题清单和修改建议，不要重写全文。\n\n' + text }
+    ], { temp: 0.2, note: '自检复核' });
+    box.innerHTML = '<div class="ok-box" style="white-space:pre-wrap">' + escHtml(r.text) + '</div>';
+  } catch (e) {
+    box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  }
+}
+
+/* ===== 法务AI 3.2 · 核心逻辑（二） ===== */
+
+/* ==================== 证据分析 ==================== */
+async function evidenceRun() {
+  const material = $('evMaterial').value.trim();
+  if (!material) { toast('请先粘贴案情和证据'); return; }
+  const box = $('evResult');
+  box.innerHTML = '';
+  const btn = $('btnEvRun');
+  btn.disabled = true;
+  showLoading(box, 'AI 正在整理证据清单与分析…');
+  try {
+    const r = await callLLM([
+      { role: 'system', content: SYS },
+      { role: 'user', content: '请对下面的案情与证据做证据分析，按此结构输出（用纯文本，不用表格）：\n一、证据清单：每条一行“序号｜证据名称｜来源/形式｜是否原件｜证明内容｜证明目的”\n二、质证意见：对方可能提出的质疑及应对\n三、补充证据建议：还缺什么证据、怎么补\n四、风险提示\n素材：\n' + material }
+    ], { temp: 0.3, note: '证据分析' });
+    hideLoading();
+    showDocResult(box, '🧾 证据分析报告', r.text);
+  } catch (e) {
+    hideLoading();
+    if (e.needSetup) goTab('settings');
+    box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ==================== 法律研究 ==================== */
+async function researchRun() {
+  const q = $('rsQ').value.trim();
+  if (!q) { toast('请输入要研究的问题'); return; }
+  const box = $('rsResult');
+  box.innerHTML = '';
+  const btn = $('btnRsRun');
+  btn.disabled = true;
+  showLoading(box, 'AI 正在检索相关法律规定…');
+  try {
+    const r = await callLLM([
+      { role: 'system', content: SYS_RESEARCH },
+      { role: 'user', content: '请研究这个问题：' + q }
+    ], { temp: 0.3, note: '法律研究' });
+    hideLoading();
+    showDocResult(box, '📚 研究结果', r.text);
+  } catch (e) {
+    hideLoading();
+    if (e.needSetup) goTab('settings');
+    box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.querySelectorAll('#tab-research .chip').forEach(ch => {
+  ch.addEventListener('click', () => {
+    $('rsQ').value = ch.dataset.q;
+    researchRun();
+  });
+});
+
+/* ==================== 通用结果查看器 ==================== */
+function showDocResult(el, title, text) {
+  curDocText = text;
+  el.innerHTML = '<div class="card">' +
+    '<h2>' + escHtml(title) + '</h2>' +
+    '<div class="doc-body">' + escHtml(text) + '</div>' +
+    '<div class="btnrow">' +
+    '<button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>' +
+    '<button class="btn btn-gold" onclick="exportDoc()">📥 导出 Word</button>' +
+    '<button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>' +
+    '</div></div>';
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ==================== 基层治理场景 ==================== */
+const GOVERN = [
+  { id: 'zhai', ic: '🏠', name: '宅基地纠纷', out: '民事起诉状（双版）',
+    fields: [
+      { k: 'party', label: '当事人信息（双方姓名、身份、住址）' },
+      { k: 'land', label: '宅基地位置、面积、权属情况' },
+      { k: 'facts', label: '纠纷经过（谁、何时、何事）' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'chengbao', ic: '🌾', name: '土地承包纠纷', out: '民事起诉状（双版）',
+    fields: [
+      { k: 'party', label: '当事人信息' },
+      { k: 'land', label: '承包地位置、面积、承包期限' },
+      { k: 'facts', label: '纠纷经过（流转、征收、权属等）' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'linli', ic: '🏡', name: '邻里纠纷', out: '民事起诉状（双版）',
+    fields: [
+      { k: 'party', label: '当事人信息' },
+      { k: 'facts', label: '纠纷经过（通行/排水/噪音/采光等）' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'shanyang', ic: '👵', name: '赡养纠纷', out: '民事起诉状（双版）',
+    fields: [
+      { k: 'old', label: '老人信息（姓名、年龄、住址）' },
+      { k: 'child', label: '子女信息（各子女姓名、住址、赡养情况）' },
+      { k: 'facts', label: '不赡养的事实经过' },
+      { k: 'claim', label: '诉求（赡养费标准、方式等）' }
+    ] },
+  { id: 'caili', ic: '💍', name: '彩礼返还纠纷', out: '民事起诉状（双版）',
+    fields: [
+      { k: 'party', label: '当事人信息' },
+      { k: 'facts', label: '订婚/结婚、彩礼金额与支付方式、现状' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'qianxin', ic: '💼', name: '农民工欠薪', out: '民事起诉状（双版）＋仲裁提示',
+    fields: [
+      { k: 'worker', label: '务工人员信息（姓名、工种）' },
+      { k: 'boss', label: '欠薪方信息（单位/包工头）' },
+      { k: 'facts', label: '工作期间、欠薪金额、约定与催要经过' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'cunwu', ic: '📢', name: '村务公开/信访', out: '信访反映材料',
+    fields: [
+      { k: 'party', label: '反映人信息' },
+      { k: 'target', label: '被反映单位/人员' },
+      { k: 'facts', label: '反映事项与事实经过' },
+      { k: 'claim', label: '诉求' }
+    ] },
+  { id: 'zhengming', ic: '📄', name: '村委会证明/情况说明', out: '情况说明',
+    fields: [
+      { k: 'who', label: '为谁出具（姓名、身份证号、住址）' },
+      { k: 'what', label: '要证明/说明的事项（时间、地点、经过）' },
+      { k: 'use', label: '用途（用于什么手续）' }
+    ] }
+];
+
+let currentGovern = null;
+function renderGovernGrid() {
+  $('governGrid').innerHTML = GOVERN.map(s =>
+    '<button class="scenario" onclick="governPick(\'' + s.id + '\')">' +
+    '<div class="sic">' + s.ic + '</div><div class="snm">' + escHtml(s.name) + '</div>' +
+    '<div class="sds">' + escHtml(s.out) + '</div></button>'
+  ).join('');
+}
+function governPick(id) {
+  const s = GOVERN.find(x => x.id === id);
+  if (!s) return;
+  currentGovern = s;
+  $('governFormTitle').textContent = s.ic + ' ' + s.name + '（生成：' + s.out + '）';
+  $('governFields').innerHTML = s.fields.map(f =>
+    '<label class="fld">' + escHtml(f.label) + '</label>' +
+    '<textarea id="gf_' + f.k + '" placeholder="' + escHtml(f.label) + '"></textarea>'
+  ).join('');
+  $('governForm').style.display = '';
+  $('governResult').innerHTML = '';
+  window.scrollTo({ top: $('governForm').offsetTop - 90, behavior: 'smooth' });
+}
+function governBack() {
+  currentGovern = null;
+  $('governForm').style.display = 'none';
+  $('governResult').innerHTML = '';
+}
+async function governRun() {
+  if (!currentGovern) return;
+  const vals = {};
+  currentGovern.fields.forEach(f => { vals[f.k] = $('gf_' + f.k).value.trim(); });
+  if (currentGovern.fields.every(f => !vals[f.k])) { toast('请至少填写一项内容'); return; }
+  const box = $('governResult');
+  box.innerHTML = '';
+  const btn = $('btnGovernRun');
+  btn.disabled = true;
+  showLoading(box, 'AI 正在根据场景要素生成文书…');
+  try {
+    const desc = currentGovern.fields.map(f => f.label + '：' + (vals[f.k] || '（未提供）')).join('\n');
+    let r;
+    if (currentGovern.id === 'zhengming') {
+      r = await callLLM([
+        { role: 'system', content: SYS },
+        { role: 'user', content: '请生成一份村委会《情况说明/证明》草稿：用语客观、事实清楚、落款留空（村委会名称、日期留空），并附一行提示“需加盖村委会公章”。\n要素：\n' + desc }
+      ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+    } else if (currentGovern.id === 'cunwu') {
+      r = await callLLM([
+        { role: 'system', content: SYS },
+        { role: 'user', content: '请生成规范的《信访反映材料》：反映人信息、被反映单位/人员、反映事项、事实经过、诉求、联系方式（缺失写待补充）。\n要素：\n' + desc }
+      ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+    } else {
+      r = await callLLM([
+        { role: 'system', content: SYS },
+        { role: 'user', content: '请根据要素生成民事起诉状，一案两份、内容一致：第一份以“【要素式】民事起诉状”为标题（当事人信息、诉讼请求和依据、事实和理由、证据清单、此致XX人民法院）；第二份以“【传统式】民事起诉状”为标题（完整叙述式）。两份之间用单独一行“=====要素式完毕=====”分隔。场景：' + currentGovern.name + '。缺失信息写（待补充）。\n要素：\n' + desc }
+      ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+    }
+    hideLoading();
+    const docs = currentGovern.id === 'cunwu' || currentGovern.id === 'zhengming'
+      ? [{ name: currentGovern.name + '·成稿', text: r.text.trim() }]
+      : splitDocs(r.text, 'complaint');
+    currentDraft.docs = docs;
+    currentDraft.material = desc;
+    currentDraft.caseId = null;
+    showDocResult(box, '✍️ ' + currentGovern.name + ' · 成稿', docs.map(d => d.name + '\n' + d.text).join('\n\n'));
+    box.querySelector('.btnrow').insertAdjacentHTML('beforeend', '<button class="btn btn-ghost" onclick="saveDraftToCase()">💾 存入案件档案</button>');
+  } catch (e) {
+    hideLoading();
+    if (e.needSetup) goTab('settings');
+    box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ==================== 模型与费用 ==================== */
+function syncSettingsUI() {
+  $('setProvider').value = state.provider;
+  const p = state.provider;
+  $('setKey').value = state.keys[p] || '';
+  $('setModel').value = state.models[p] || PROVIDERS[p].model;
+  $('setBase').value = state.bases[p] || '';
+  const r = state.rates[p] || DEFAULT_STATE.rates[p];
+  $('setRateIn').value = r.in;
+  $('setRateOut').value = r.out;
+  $('keyHint').textContent = PROVIDERS[p].hint;
+  $('typeRow').style.display = (currentDraft.mode === 'complaint' || currentDraft.mode === 'answer' || currentDraft.mode === 'generic') ? '' : 'none';
+}
+$('setProvider').addEventListener('change', syncSettingsUI);
+
+function saveSettings() {
+  const p = $('setProvider').value;
+  state.provider = p;
+  state.keys[p] = $('setKey').value.trim();
+  state.models[p] = $('setModel').value.trim() || PROVIDERS[p].model;
+  state.bases[p] = $('setBase').value.trim();
+  state.rates[p] = {
+    in: parseFloat($('setRateIn').value) || 0,
+    out: parseFloat($('setRateOut').value) || 0
+  };
+  saveState();
+  updateModelPill();
+  toast('设置已保存');
+}
+function updateModelPill() {
+  const p = state.provider;
+  const model = (state.models && state.models[p]) || PROVIDERS[p].model;
+  const key = state.keys && state.keys[p];
+  $('modelPill').textContent = key ? (PROVIDERS[p].label + ' · ' + model) : '未设置密钥 · ' + PROVIDERS[p].label;
+}
+async function testConnection() {
+  saveSettings();
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '测试中…';
+  try {
+    const r = await callLLM([
+      { role: 'system', content: '你是连接测试助手。' },
+      { role: 'user', content: '请只回复四个字：连接成功' }
+    ], { temp: 0, maxTokens: 50, note: '连接测试' });
+    toast('连接成功：' + r.text.slice(0, 30));
+  } catch (e) {
+    if (e.needSetup) goTab('settings');
+    toast('测试失败：' + e.message.slice(0, 60));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔌 测试连接';
+  }
+}
+
+function renderLedger() {
+  const body = $('ledgerBody');
+  if (!state.ledger.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">暂无调用记录</td></tr>';
+    return;
+  }
+  body.innerHTML = state.ledger.slice(0, 100).map(e =>
+    '<tr><td>' + fmtTime(e.t) + '</td><td>' + escHtml(e.model || e.provider) + '</td>' +
+    '<td>' + (e.in || 0) + '</td><td>' + (e.out || 0) + '</td>' +
+    '<td>' + (e.cost ? e.cost.toFixed(4) : '0') + '</td><td>' + escHtml(e.note || '') + '</td></tr>'
+  ).join('');
+}
+function updateStats() {
+  const calls = state.ledger.length;
+  const tokens = state.ledger.reduce((s, e) => s + (e.in || 0) + (e.out || 0), 0);
+  const cost = state.ledger.reduce((s, e) => s + (e.cost || 0), 0);
+  $('statCalls').textContent = calls;
+  $('statTokens').textContent = tokens.toLocaleString();
+  $('statCost').textContent = '¥' + cost.toFixed(4);
+}
+function clearLedger() {
+  if (!confirm('确定清空费用台账吗？')) return;
+  state.ledger = [];
+  saveState();
+  renderLedger();
+  updateStats();
+  toast('台账已清空');
+}
+
+function exportAll() {
+  const blob = new Blob(['\ufeff' + JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '法务AI3.2_数据备份_' + Date.now() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast('数据已导出');
+}
+function importAll(ev) {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const saved = JSON.parse(reader.result);
+      state = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_STATE)), saved);
+      saveState();
+      renderCases();
+      syncSettingsUI();
+      updateModelPill();
+      renderLedger();
+      updateStats();
+      toast('数据导入成功');
+    } catch (e) {
+      toast('导入失败：文件格式不正确');
+    }
+  };
+  reader.readAsText(f, 'utf-8');
+  ev.target.value = '';
+}
+function clearAll() {
+  if (!confirm('确定清空全部数据（案件、设置、台账）吗？建议先导出备份。')) return;
+  if (!confirm('再次确认：清空后不可恢复！')) return;
+  state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  saveState();
+  renderCases();
+  syncSettingsUI();
+  updateModelPill();
+  renderLedger();
+  updateStats();
+  toast('已清空全部数据');
+}
+
+/* ==================== 初始化 ==================== */
+loadState();
+populateCaseTypes();
+renderCases();
+syncSettingsUI();
+updateModelPill();
+renderLedger();
+updateStats();
+renderGovernGrid();
+setDraftMode('complaint');
+
+</script>
+</body>
+</html>
