@@ -328,6 +328,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
     <div class="grid2">
       <div>
         <label class="fld">③ 模型名称</label>
+        <select id="setModelPreset" onchange="applyModelPreset()" style="margin-bottom:6px"><option value="">— 选择常用模型（也可手动输入）—</option></select>
         <input type="text" id="setModel" placeholder="例如 deepseek-chat / glm-4-flash / qwen-plus">
       </div>
       <div>
@@ -1058,6 +1059,27 @@ async function governRun() {
 }
 
 /* ==================== 模型与费用 ==================== */
+const PRESET_MODELS = {
+  deepseek: [['deepseek-chat', 'deepseek-chat（通用，便宜）'], ['deepseek-reasoner', 'deepseek-reasoner（深度思考）']],
+  zhipu: [['glm-4.7-flash', 'glm-4.7-flash（免费）'], ['glm-4.7', 'glm-4.7（最强）'], ['glm-4.6', 'glm-4.6'], ['glm-4.5', 'glm-4.5'], ['glm-4-flash', 'glm-4-flash（免费）']],
+  qwen: [['qwen-plus', 'qwen-plus'], ['qwen-turbo', 'qwen-turbo（快）'], ['qwen-max', 'qwen-max（强）'], ['qwen-long', 'qwen-long（长文本）']],
+  custom: []
+};
+function populateModelPreset() {
+  const sel = $('setModelPreset');
+  const p = state.provider;
+  const current = state.models[p] || PROVIDERS[p].model;
+  sel.innerHTML = '<option value="">— 选择常用模型（也可手动输入）—</option>' +
+    (PRESET_MODELS[p] || []).map(x => '<option value="' + escHtml(x[0]) + '">' + escHtml(x[1]) + '</option>').join('');
+  sel.value = (PRESET_MODELS[p] || []).some(x => x[0] === current) ? current : '';
+}
+function applyModelPreset() {
+  const v = $('setModelPreset').value;
+  if (v) {
+    $('setModel').value = v;
+    toast('已选择：' + v);
+  }
+}
 function syncSettingsUI() {
   $('setProvider').value = state.provider;
   const p = state.provider;
@@ -1068,6 +1090,7 @@ function syncSettingsUI() {
   $('setRateIn').value = r.in;
   $('setRateOut').value = r.out;
   $('keyHint').textContent = PROVIDERS[p].hint;
+  populateModelPreset();
   $('typeRow').style.display = (currentDraft.mode === 'complaint' || currentDraft.mode === 'answer' || currentDraft.mode === 'generic') ? '' : 'none';
 }
 $('setProvider').addEventListener('change', syncSettingsUI);
