@@ -1246,6 +1246,64 @@ const FACT_TEMPLATES = {
   ]
 };
 
+// 要素字段同义/别名兜底表：仅在标准字段名直接匹配失败后启用。
+// 匹配规则：归一化后「模型键 == 别名」或「模型键包含别名」，不反向包含，避免单字/泛词串位。
+const FACT_ALIASES = {
+  relation: ['原被告双方的关系', '原被告双方关系', '双方关系', '双方的关系', '当事人关系', '原被告之间的关系', '原被告间关系'],
+  loanTime: ['借款时间地点及金额', '借款时间与地点金额', '借款时间地点数额', '借款时间金额', '出借时间地点金额', '借款金额时间地点'],
+  loanUse: ['借款目的', '资金用途', '借款资金用途', '贷款用途'],
+  agreement: ['还款约定情况', '还款约定及利息', '还款计划', '约定还款时间', '还款期限约定', '还款方式约定', '还款时间及方式'],
+  overdue: ['逾期未还情况', '逾期违约情况', '欠款未还情况', '逾期及催收情况', '还款逾期情况', '逾期未还'],
+  total: ['诉讼标的总额', '诉讼标的额', '标的额', '涉案金额', '欠款总额', '诉讼请求金额'],
+  basis: ['法律依据', '法律根据', '请求的法律依据', '诉讼依据', '起诉依据', '依据条款'],
+  marriageTime: ['结婚时间', '登记结婚时间'],
+  marriageStatus: ['夫妻感情状况', '感情状况'],
+  separation: ['分居事实'],
+  propertySplit: ['财产分割请求', '共同财产情况'],
+  debtSplit: ['共同债务'],
+  support: ['抚养费情况', '抚养权归属', '抚养及探望情况'],
+  contractInfo: ['合同情况', '签订合同情况', '合同主要内容', '合同约定情况'],
+  contractSign: ['合同情况', '签订合同情况'],
+  subject: ['标的物情况', '标的物数量及金额', '货物数量金额'],
+  perform: ['合同履行情况', '履行合同情况', '履约情况'],
+  breach: ['违约情况', '违约情形', '被告违约情形', '违约事实'],
+  loss: ['损失金额', '损失数额', '赔偿损失情况'],
+  rentAgreement: ['租金约定', '押金约定', '租金押金情况', '租金及押金'],
+  houseInfo: ['房屋基本情况', '房屋坐落情况'],
+  ownerInfo: ['业主情况', '房屋及业主情况'],
+  serviceContract: ['物业合同情况', '物业服务合同'],
+  servicePerform: ['物业服务情况'],
+  arrears: ['欠费金额', '物业费欠费情况', '欠缴费用情况', '欠缴费用'],
+  laborRelation: ['用工情况', '劳动关系'],
+  wageSocial: ['工资及社保情况', '工资保险情况', '工资社保缴纳情况'],
+  termination: ['劳动关系解除情况'],
+  arbitration: ['劳动仲裁情况', '仲裁裁决情况', '仲裁结果', '劳动仲裁'],
+  injury: ['工伤认定情况'],
+  accidentInfo: ['交通事故发生情况', '事故经过'],
+  responsibility: ['责任认定情况', '事故责任划分', '责任认定'],
+  casualty: ['伤亡人数及伤情'],
+  insurance: ['保险情况', '保险理赔情况', '理赔情况'],
+  loanContract: ['贷款合同', '贷款合同情况'],
+  repayment: ['还款约定情况', '还款计划', '还款期限及利息约定', '还款方式约定'],
+  overdueAmount: ['欠款金额', '逾期本息', '逾期欠款金额'],
+  projectInfo: ['工程基本情况', '工程概况'],
+  paymentDetail: ['付款情况', '款项支付明细'],
+  performStatus: ['履行情况', '履约情况'],
+  breachDetail: ['违约情况', '违约事实', '违约具体情形'],
+  relationLiability: ['各被告关系', '被告之间关系', '多被告关系'],
+  noticeDemand: ['催告情况', '协商情况', '催告协商情况'],
+  lossDetail: ['损失金额', '损失明细'],
+  legalBasis: ['法律依据', '法律依据分析'],
+  pricePay: ['价款情况', '付款情况', '房款支付情况'],
+  delivery: ['交房情况', '过户情况', '交付过户情况'],
+  applyInfo: ['申请事项', '争议事项'],
+  govAction: ['行政行为情况', '具体行政行为'],
+  illegal: ['违法事实', '违法情形'],
+  remedy: ['复议情况', '诉讼情况', '复议诉讼情况'],
+  judgment: ['生效文书情况', '执行依据情况'],
+  refusal: ['拒不履行情况', '拒执情况', '有能力履行而拒不履行']
+};
+
 const CASE_KEY_MAP = {
   '民间借贷纠纷': 'loan', '民间借贷': 'loan',
   '离婚纠纷': 'divorce', '离婚': 'divorce',
@@ -1516,7 +1574,18 @@ function fillElemForm(obj) {
           const val = String(ff[k] || '').trim();
           if (!val) continue;
           const nk = normLabel(k);
-          if (nk === nl || nk.includes(nl) || nl.includes(nk)) { v = val; break; }
+          if (nk === nl || nk.includes(nl)) { v = val; break; }
+        }
+      }
+      if (!v) {
+        const nAliases = (FACT_ALIASES[f.key] || []).map(normLabel);
+        if (nAliases.length) {
+          for (const k in ff) {
+            const val = String(ff[k] || '').trim();
+            if (!val) continue;
+            const nk = normLabel(k);
+            if (nAliases.some(na => nk === na || nk.includes(na))) { v = val; break; }
+          }
         }
       }
       set('eff_' + f.key, v);
