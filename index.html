@@ -184,7 +184,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
 
     <div id="typeRow">
       <label class="fld">② 案由（起诉状/答辩状/其他文书选填，AI 也会自动识别）</label>
-      <select id="caseTypeSel"><option value="">—— 请选择案由（可留空让 AI 识别）——</option></select>
+      <select id="caseTypeSel" onchange="onDraftCaseTypeChange()"><option value="">—— 请选择案由（可留空让 AI 识别）——</option></select>
     </div>
 
     <label class="fld">③ 粘贴素材（案情 / 诉求 / 判决书 / 说明）</label>
@@ -206,14 +206,69 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
     </div>
   </div>
 
+  <div id="draftElemForm" style="display:none">
+    <div class="card">
+      <h2>⑤ 要素采集表单 <small>起诉状双版引擎：AI 已自动提取要素，可修改后一键生成「要素式＋传统式」</small></h2>
+      <div id="elemMissing" class="warn-box" style="display:none"></div>
+      <div class="grid2">
+        <div>
+          <div class="sub" style="margin:4px 0 0">👤 原告</div>
+          <label class="fld">姓名</label>
+          <input type="text" id="elemPlName" placeholder="原告姓名">
+          <label class="fld">性别</label>
+          <select id="elemPlGender"><option value="">请选择</option><option>男</option><option>女</option></select>
+          <label class="fld">出生日期</label>
+          <input type="text" id="elemPlBirth" placeholder="如：1985年3月15日">
+          <label class="fld">民族</label>
+          <input type="text" id="elemPlEthnic" placeholder="如：汉族">
+          <label class="fld">身份证号</label>
+          <input type="text" id="elemPlId">
+          <label class="fld">住所地</label>
+          <input type="text" id="elemPlAddr">
+          <label class="fld">联系电话</label>
+          <input type="text" id="elemPlPhone">
+        </div>
+        <div>
+          <div class="sub" style="margin:4px 0 0">👥 被告</div>
+          <label class="fld">姓名/名称</label>
+          <input type="text" id="elemDfName" placeholder="被告姓名/单位名称">
+          <label class="fld">性别</label>
+          <select id="elemDfGender"><option value="">请选择</option><option>男</option><option>女</option></select>
+          <label class="fld">出生日期</label>
+          <input type="text" id="elemDfBirth" placeholder="如：1980年6月20日">
+          <label class="fld">民族</label>
+          <input type="text" id="elemDfEthnic" placeholder="如：汉族">
+          <label class="fld">身份证号/统一社会信用代码</label>
+          <input type="text" id="elemDfId">
+          <label class="fld">住所地</label>
+          <input type="text" id="elemDfAddr">
+          <label class="fld">联系电话</label>
+          <input type="text" id="elemDfPhone">
+        </div>
+      </div>
+      <label class="fld">诉讼请求（每行一项）</label>
+      <textarea id="elemClaims" placeholder="1. 请求判令被告偿还借款本金…&#10;2. 请求判令被告支付利息…"></textarea>
+      <label class="fld">证据清单（每行一项：名称｜来源/形式｜证明目的）</label>
+      <textarea id="elemEvidence" placeholder="1. 借条（原件）｜证明借贷关系成立&#10;2. 银行转账记录｜证明款项已交付"></textarea>
+      <div id="elemFactFields"></div>
+      <label class="fld">受理法院</label>
+      <input type="text" id="elemCourt" placeholder="如：涡阳县人民法院">
+      <div class="btnrow">
+        <button class="btn btn-gold" onclick="genDualComplaint()">✍️ 生成双版文书（要素式＋传统式）</button>
+        <button class="btn btn-line btn-sm" onclick="extractAndFill()">🔄 重新提取要素</button>
+      </div>
+    </div>
+  </div>
+
   <div id="draftResult" style="display:none">
     <div class="card">
-      <h2>⑤ 文书预览 <small>成稿即用，可直接复制 / 导出 / 打印</small></h2>
+      <h2>⑥ 文书预览 <small>成稿即用，可直接复制 / 导出 / 打印</small></h2>
       <div class="doc-tabs" id="docTabs"></div>
       <div class="doc-body" id="docBody"></div>
       <div class="btnrow">
         <button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>
         <button class="btn btn-gold" onclick="exportDoc()">📥 导出 Word</button>
+        <button class="btn btn-gold" onclick="exportBothDocs()">📥 导出两份 Word</button>
         <button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>
         <button class="btn btn-line" onclick="selfCheck()">🔍 AI 自检复核</button>
         <button class="btn btn-ghost" onclick="saveDraftToCase()">💾 存入案件档案</button>
@@ -318,8 +373,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
     <h2>⚙️ 模型与费用管理 <small>支持多模型切换，密钥只存在本机浏览器</small></h2>
     <label class="fld">① 服务商</label>
     <select id="setProvider">
-      <option value="deepseek">DeepSeek（推荐，便宜）</option>
-      <option value="zhipu">智谱 GLM-4-Flash（永久免费）</option>
+      <option value="zhipu">智谱 GLM-4.7-Flash（免费，推荐）</option>
+      <option value="deepseek">DeepSeek（保留可选）</option>
       <option value="qwen">通义千问（阿里云）</option>
       <option value="custom">自定义（OpenAI 兼容接口）</option>
     </select>
@@ -394,14 +449,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
 
 const STORE_KEY = 'fawu32_v1';
 const PROVIDERS = {
-  deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', hint: '在 platform.deepseek.com 创建 API Key（格式 sk-…），DeepSeek 价格低、适合文书生成' },
-  zhipu: { label: '智谱 GLM', base: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4-flash', hint: '在 open.bigmodel.cn 实名认证后创建 API Key，glm-4-flash 永久免费，余额不足时可一键切到这里' },
+  deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', hint: '在 platform.deepseek.com 创建 API Key（格式 sk-…）。如遇“请求过于频繁”可切换到智谱免费通道（glm-4.7-flash）' },
+  zhipu: { label: '智谱 GLM（免费）', base: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.7-flash', hint: '在 open.bigmodel.cn 实名认证后创建 API Key，glm-4.7-flash 永久免费，推荐首选' },
   qwen: { label: '通义千问', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', hint: '在阿里云百炼（bailian.console.aliyun.com）创建 API Key' },
   custom: { label: '自定义', base: '', model: '', hint: '填写 OpenAI 兼容的接口地址与模型名称' }
 };
 
 const DEFAULT_STATE = {
-  provider: 'deepseek',
+  provider: 'zhipu',
   keys: { deepseek: '', zhipu: '', qwen: '', custom: '' },
   models: { deepseek: 'deepseek-chat', zhipu: 'glm-4-flash', qwen: 'qwen-plus', custom: '' },
   bases: { deepseek: '', zhipu: '', qwen: '', custom: '' },
@@ -440,6 +495,14 @@ function toast(msg, ms) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.remove('show'), ms || 2400);
 }
+/* ---------- 全局并发锁（防止“输入过于频繁”） ---------- */
+let busy = false;
+function tryLock() {
+  if (busy) { toast('上一步还在进行中，请稍候再点'); return false; }
+  busy = true;
+  return true;
+}
+function unlock() { busy = false; }
 function fmtTime(ts) {
   const d = new Date(ts);
   const p = n => (n < 10 ? '0' + n : '' + n);
@@ -529,9 +592,9 @@ async function callLLM(messages, opts) {
     const t = String(detail).toLowerCase();
     if (res.status === 401) throw new Error('API 密钥无效或已过期：' + String(detail).slice(0, 120));
     if (res.status === 402 || t.indexOf('insufficient') >= 0 || t.indexOf('余额') >= 0 || t.indexOf('balance') >= 0) {
-      throw new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4-flash）');
+      throw new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
     }
-    if (res.status === 429) throw new Error('请求过于频繁（限流），请稍等几秒再试');
+    if (res.status === 429) throw new Error('请求过于频繁（限流）：请稍等几秒再试；若反复出现，请到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
     throw new Error('接口返回错误（' + res.status + '）：' + (detail || '未知错误').slice(0, 200));
   }
   const j = await res.json();
@@ -648,6 +711,10 @@ function setDraftMode(mode) {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
   $('typeRow').style.display = (mode === 'complaint' || mode === 'answer' || mode === 'generic') ? '' : 'none';
+  if (mode !== 'complaint' && $('draftElemForm')) {
+    $('draftElemForm').style.display = 'none';
+    elemFormFilled = false;
+  }
 }
 document.querySelectorAll('#draftModeRow .mode-chip').forEach(b => {
   b.addEventListener('click', () => setDraftMode(b.dataset.mode));
@@ -670,12 +737,15 @@ function populateCaseTypes() {
 }
 
 async function draftAnalyze(force) {
+  if (!tryLock()) return;
   const material = $('draftMaterial').value.trim();
-  if (!material) { toast('请先粘贴素材'); return; }
+  if (!material) { unlock(); toast('请先粘贴素材'); return; }
   const mode = currentDraft.mode;
   currentDraft.material = material;
   const btn = $('btnDraftStart');
   btn.disabled = true;
+  elemFormFilled = false;
+  $('draftElemForm').style.display = 'none';
   $('draftPrep').style.display = '';
   $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在分析素材，识别文书类型与关键要素…</span>';
   try {
@@ -693,11 +763,15 @@ async function draftAnalyze(force) {
     }
     $('draftPrepText').innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.8">' + escHtml(r.text) + '</pre>';
     $('draftPrep').style.display = '';
+    if (mode === 'complaint') {
+      await runExtractFill();
+    }
   } catch (e) {
     if (e.needSetup) { goTab('settings'); }
     $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
+    unlock();
   }
 }
 
@@ -726,8 +800,13 @@ function draftPrompt(mode) {
 }
 
 async function draftGenerate() {
+  if (!tryLock()) return;
   if (!currentDraft.material) { toast('请先粘贴素材'); return; }
   const mode = currentDraft.mode;
+  if (mode === 'complaint') {
+    unlock();
+    return genDualComplaint();
+  }
   $('draftPrep').style.display = '';
   $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在起草文书（' + MODE_NAMES[mode] + '），一般 30~90 秒…</span>';
   const btn = $('btnDraftGenerate');
@@ -749,6 +828,7 @@ async function draftGenerate() {
     $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
+    unlock();
   }
 }
 
@@ -799,6 +879,8 @@ function clearDraft() {
   $('draftPrep').style.display = 'none';
   $('draftResult').style.display = 'none';
   $('selfCheckArea').innerHTML = '';
+  $('draftElemForm').style.display = 'none';
+  elemFormFilled = false;
   currentDraft = { mode: 'complaint', caseType: '', material: '', analysis: '', docs: [], caseId: null };
   setDraftMode('complaint');
 }
@@ -843,6 +925,7 @@ function printDoc() {
 async function selfCheck() {
   const text = curDocText || $('docBody').textContent;
   if (!text) { toast('请先生成文书'); return; }
+  if (!tryLock()) return;
   const box = $('selfCheckArea');
   box.innerHTML = '<span class="loading"><span class="spin"></span>AI 正在复核文书…</span>';
   try {
@@ -853,15 +936,542 @@ async function selfCheck() {
     box.innerHTML = '<div class="ok-box" style="white-space:pre-wrap">' + escHtml(r.text) + '</div>';
   } catch (e) {
     box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    unlock();
   }
+}
+
+/* ==================== 双引擎：要素式＋传统式（自老工具合并，3.2 版） ==================== */
+let elemFormFilled = false;
+
+const ELEM_TITLES = {
+  loan: '民间借贷纠纷民事起诉状',
+  divorce: '离婚纠纷民事起诉状',
+  contract: '买卖合同纠纷民事起诉状',
+  lease: '房屋租赁合同纠纷民事起诉状',
+  property: '物业服务合同纠纷民事起诉状',
+  labor: '劳动争议纠纷民事起诉状',
+  traffic: '机动车交通事故责任纠纷民事起诉状',
+  finance: '金融借款合同纠纷民事起诉状',
+  construction: '建设工程合同纠纷民事起诉状',
+  houseSale: '房屋买卖合同纠纷民事起诉状',
+  admin: '行政起诉状',
+  criminal: '刑事自诉状'
+};
+
+const FACT_TEMPLATES = {
+  loan: [
+    { key: 'relation', label: '原被告关系' },
+    { key: 'loanTime', label: '借款时间地点金额' },
+    { key: 'loanUse', label: '借款用途' },
+    { key: 'agreement', label: '还款约定' },
+    { key: 'overdue', label: '逾期情况' },
+    { key: 'total', label: '标的总额' },
+    { key: 'basis', label: '请求依据' }
+  ],
+  divorce: [
+    { key: 'marriageTime', label: '结婚时间地点' },
+    { key: 'childCustody', label: '子女情况' },
+    { key: 'marriageStatus', label: '夫妻感情破裂原因' },
+    { key: 'separation', label: '分居情况' },
+    { key: 'propertySplit', label: '共同财产分割请求' },
+    { key: 'debtSplit', label: '共同债务情况' },
+    { key: 'support', label: '子女抚养/抚养费/探望权' },
+    { key: 'damage', label: '赔偿/补偿/帮助' },
+    { key: 'basis', label: '诉请依据' }
+  ],
+  contract: [
+    { key: 'contractTime', label: '合同签订情况' },
+    { key: 'subject', label: '标的物数量金额' },
+    { key: 'perform', label: '履行情况' },
+    { key: 'breach', label: '被告违约情况' },
+    { key: 'loss', label: '损失情况' },
+    { key: 'total', label: '标的总额' },
+    { key: 'basis', label: '请求依据' }
+  ],
+  lease: [
+    { key: 'contractInfo', label: '租赁合同情况' },
+    { key: 'houseInfo', label: '租赁房屋情况' },
+    { key: 'rentAgreement', label: '租金及押金约定' },
+    { key: 'breach', label: '被告违约情况' },
+    { key: 'notice', label: '催告情况' }
+  ],
+  property: [
+    { key: 'ownerInfo', label: '业主身份及房屋情况' },
+    { key: 'serviceContract', label: '物业服务合同情况' },
+    { key: 'servicePerform', label: '服务履行情况' },
+    { key: 'arrears', label: '欠费情况' },
+    { key: 'notice', label: '催告情况' }
+  ],
+  labor: [
+    { key: 'laborRelation', label: '劳动关系情况' },
+    { key: 'contractInfo', label: '合同签订情况' },
+    { key: 'wageSocial', label: '工资及社保情况' },
+    { key: 'termination', label: '解除劳动关系情况' },
+    { key: 'arbitration', label: '仲裁情况' },
+    { key: 'injury', label: '工伤情况' },
+    { key: 'basis', label: '诉请依据' }
+  ],
+  traffic: [
+    { key: 'accidentInfo', label: '事故发生情况' },
+    { key: 'responsibility', label: '事故责任认定' },
+    { key: 'casualty', label: '伤亡情况' },
+    { key: 'loss', label: '损失情况' },
+    { key: 'insurance', label: '保险理赔情况' }
+  ],
+  finance: [
+    { key: 'loanContract', label: '贷款合同情况' },
+    { key: 'loanUse', label: '贷款用途' },
+    { key: 'repayment', label: '还款约定' },
+    { key: 'overdue', label: '逾期情况' },
+    { key: 'overdueAmount', label: '逾期金额' },
+    { key: 'basis', label: '请求依据' }
+  ],
+  construction: [
+    { key: 'contractSign', label: '合同签订情况' },
+    { key: 'projectInfo', label: '工程标的与性质' },
+    { key: 'paymentDetail', label: '款项支付情况' },
+    { key: 'performStatus', label: '合同履行情况' },
+    { key: 'breachDetail', label: '违约情况' },
+    { key: 'relationLiability', label: '多被告关系及责任承担' },
+    { key: 'noticeDemand', label: '催告与协商情况' },
+    { key: 'lossDetail', label: '损失情况' },
+    { key: 'legalBasis', label: '法律依据分析' }
+  ],
+  houseSale: [
+    { key: 'contractInfo', label: '合同签订情况' },
+    { key: 'houseInfo', label: '房屋信息' },
+    { key: 'pricePay', label: '价款与付款情况' },
+    { key: 'delivery', label: '交付与过户情况' },
+    { key: 'breach', label: '违约情形' },
+    { key: 'loss', label: '损失情况' },
+    { key: 'basis', label: '请求依据' }
+  ],
+  admin: [
+    { key: 'applyInfo', label: '申请/争议事项' },
+    { key: 'govAction', label: '行政机关行为（时间、文号、内容）' },
+    { key: 'illegal', label: '违法情形' },
+    { key: 'remedy', label: '复议/诉讼情况' },
+    { key: 'basis', label: '法律依据' }
+  ],
+  criminal: [
+    { key: 'judgment', label: '生效文书及执行情况' },
+    { key: 'refusal', label: '拒执事实（有能力履行而拒不履行）' },
+    { key: 'evidence', label: '证据清单' },
+    { key: 'basis', label: '法律依据' }
+  ]
+};
+
+const CASE_KEY_MAP = {
+  '民间借贷纠纷': 'loan', '民间借贷': 'loan',
+  '离婚纠纷': 'divorce', '离婚': 'divorce',
+  '买卖合同纠纷': 'contract', '买卖合同': 'contract',
+  '房屋租赁合同纠纷': 'lease', '房屋租赁': 'lease', '房屋租赁纠纷': 'lease',
+  '物业服务合同纠纷': 'property', '物业服务': 'property', '物业': 'property',
+  '劳动争议纠纷': 'labor', '劳动争议': 'labor',
+  '机动车交通事故责任纠纷': 'traffic', '交通事故': 'traffic', '交通事故责任纠纷': 'traffic',
+  '金融借款合同纠纷': 'finance', '金融借款': 'finance',
+  '建设工程合同纠纷': 'construction', '建设工程施工合同纠纷': 'construction', '建设工程': 'construction',
+  '房屋买卖合同纠纷': 'houseSale', '房屋买卖': 'houseSale',
+  '政府信息公开': 'admin', '行政复议': 'admin', '行政许可': 'admin', '行政处罚': 'admin',
+  '行政强制执行': 'admin', '行政协议': 'admin', '不履行法定职责': 'admin',
+  '工伤保险资格或者待遇认定': 'admin', '国有土地上房屋征收决定': 'admin', '行政征收': 'admin'
+};
+
+function elemKeyOf(name) {
+  const n = String(name || '').trim();
+  if (CASE_KEY_MAP[n]) return CASE_KEY_MAP[n];
+  for (const k in CASE_KEY_MAP) {
+    if (n.includes(k) || k.includes(n)) return CASE_KEY_MAP[k];
+  }
+  if (n.includes('刑事')) return 'criminal';
+  return null;
+}
+
+function elemTitleOf(key, caseType) {
+  if (key === 'admin') return '行政起诉状';
+  if (key === 'criminal') return '刑事自诉状';
+  return ELEM_TITLES[key] || (caseType || '民事') + '起诉状';
+}
+
+function genderBox(g) {
+  return (g === '男' ? '☑' : '☐') + '男  ' + (g === '女' ? '☑' : '☐') + '女';
+}
+
+function stripMarkdown(s) {
+  return String(s == null ? '' : s)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/`/g, '')
+    .trim();
+}
+
+function checkMaterialCompleteness(raw) {
+  const issues = [];
+  const t = String(raw || '');
+  if (t.length < 20) issues.push('素材内容过短，请提供更完整的案件描述');
+  const hasPlaintiff = /原告|上诉人|申请人|答辩人/.test(t);
+  const hasDefendant = /被告|被上诉人|被申请人/.test(t);
+  if (!hasPlaintiff && !hasDefendant) issues.push('未检测到明确的当事人信息（原告/被告）');
+  if (!/纠纷|争议|违约|欠款|借款|离婚|赔偿/.test(t)) issues.push('未检测到明确的纠纷内容');
+  return issues;
+}
+
+function buildElemTextLines(d) {
+  const lines = [];
+  function add(s) { lines.push(s); }
+  function blank() { lines.push(''); }
+
+  add(d.title || '民事起诉状');
+  if (d.title && d.title.includes('纠纷')) {
+    const caseLabel = d.title.replace('民事起诉状', '').replace(/（|）/g, '');
+    if (caseLabel) add('（' + caseLabel + ' · 要素式）');
+  }
+  blank();
+  add('说明：');
+  add('为了方便您更好地参加诉讼，保护您的合法权利，请填写本表。');
+  add('1. 起诉时需向人民法院提交证明您身份的材料，如身份证复印件、营业执照复印件等。');
+  add('2. 本表所列内容是您提起诉讼以及人民法院查明案件事实所需，请务必如实填写。');
+  add('3. 本表有些内容可能与您的案件无关，您认为与案件无关的项目可以填“无”或不填；对于本表中勾选项可以在对应项打“√”。');
+  add('4. 本表 word 电子版填写时，相关栏目可复制粘贴或扩容，但不得改变要素内容、格式设置。');
+  blank();
+  add('★特别提示★');
+  add('诉讼参加人应遵守诚信原则如实认真填写表格。如果诉讼参加人违反有关规定，虚假诉讼、恶意诉讼、滥用诉权，人民法院将视违法情形依法追究责任。');
+  blank();
+
+  add('【当事人信息】');
+  blank();
+  add('原告：');
+  add('  姓名：' + (d.pName || '') + '　　性别：' + genderBox(d.pGender) + '　　出生日期：' + (d.pBirth || '　　年　　月　　日') + '　　民族：' + (d.pNation || ''));
+  add('  工作单位：' + (d.pWork || '') + '　　职务：' + (d.pDuty || '') + '　　联系电话：' + (d.pPhone || ''));
+  add('  住所地（户籍所在地）：' + (d.pAddr || ''));
+  add('  经常居住地：' + (d.pLive || ''));
+  add('  证件类型：' + (d.pIdType || '身份证') + '　　证件号码：' + (d.pIdNo || ''));
+  add('  委托诉讼代理人：' + (d.hasAgent ? '☑有  ☐无' : '☐有  ☑无'));
+  if (d.hasAgent) {
+    add('  代理人姓名：' + (d.agentName || '') + '　　单位：' + (d.agentOrg || '') + '　　电话：' + (d.agentPhone || '') + '　　代理权限：' + (d.agentAuth || ''));
+  }
+  blank();
+  add('被告：');
+  add('  姓名：' + (d.dName || '') + '　　性别：' + genderBox(d.dGender) + '　　出生日期：' + (d.dBirth || '　　年　　月　　日') + '　　民族：' + (d.dNation || ''));
+  add('  工作单位：' + (d.dWork || '') + '　　职务：' + (d.dDuty || '') + '　　联系电话：' + (d.dPhone || ''));
+  add('  住所地（户籍所在地）：' + (d.dAddr || ''));
+  add('  经常居住地：' + (d.dLive || ''));
+  add('  证件类型：' + (d.dIdType || '身份证') + '　　证件号码：' + (d.dIdNo || ''));
+  blank();
+
+  add('【诉讼请求和依据】');
+  blank();
+  if (d.claims && d.claims.length > 0) {
+    d.claims.forEach((c, i) => { add((i + 1) + '. ' + c); });
+  } else {
+    add('1. '); add('2. '); add('3. ');
+  }
+  if (d.basis) { blank(); add('依据：' + d.basis); }
+  blank();
+
+  add('【事实与理由】');
+  blank();
+  if (d.facts && d.facts.length > 0) {
+    d.facts.forEach((f, i) => {
+      if (f.label) {
+        add((i + 1) + '. 【' + f.label + '】');
+        String(f.content).split('\n').forEach(line => { add('  ' + line); });
+      } else {
+        add((i + 1) + '. ' + f.content);
+      }
+      blank();
+    });
+  } else {
+    add('1. '); blank(); add('2. '); blank(); add('3. '); blank();
+  }
+
+  add('【证据和证据来源，证人姓名和住所】');
+  blank();
+  if (d.evidences && d.evidences.length > 0) {
+    d.evidences.forEach((e, i) => { add((i + 1) + '. ' + e); });
+  } else {
+    add('1. '); add('2. '); add('3. ');
+  }
+  blank();
+
+  add('【送达地址确认】');
+  blank();
+  add('地址：' + (d.serviceAddr || '') + '　　联系电话：' + (d.servicePhone || ''));
+  blank();
+
+  add('此致');
+  add(d.court || '人民法院');
+  blank();
+  add('具状人（签字、盖章）：' + (d.signerName || ''));
+  blank();
+  add(d.signDate || '　　年　　月　　日');
+  return lines;
+}
+
+function parseJsonStrict(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const s = t.indexOf('{');
+  const e = t.lastIndexOf('}');
+  if (s < 0 || e < 0 || e <= s) throw new Error('AI 返回格式异常，请重新提取');
+  return JSON.parse(t.slice(s, e + 1));
+}
+
+function renderElemFactFields(key) {
+  const box = $('elemFactFields');
+  const tpl = (key && FACT_TEMPLATES[key]) || null;
+  if (!tpl) {
+    box.innerHTML = '<label class="fld">事实与理由（要素，逐条填写）</label>' +
+      '<textarea id="eff_facts" placeholder="如：1. 借款时间地点金额…；2. 还款约定…；3. 逾期情况…"></textarea>';
+    return;
+  }
+  box.innerHTML = '<div class="sub" style="margin:12px 0 4px">事实要素（按案由模板）</div>' +
+    tpl.map(f => '<label class="fld">' + escHtml(f.label) + '</label>' +
+      '<input type="text" id="eff_' + f.key + '" placeholder="' + escHtml(f.label) + '">').join('');
+}
+
+function onDraftCaseTypeChange() {
+  const v = $('caseTypeSel').value;
+  renderElemFactFields(elemKeyOf(v));
+}
+
+function readElemForm() {
+  const val = id => { const el = $(id); return el ? el.value.trim() : ''; };
+  const claims = val('elemClaims').split('\n').map(s => s.replace(/^\d+[.、）)]\s*/, '').trim()).filter(s => s);
+  const evidence = val('elemEvidence').split('\n').map(s => s.replace(/^\d+[.、）)]\s*/, '').trim()).filter(s => s);
+  const key = elemKeyOf(val('caseTypeSel'));
+  const facts = [];
+  if (key && FACT_TEMPLATES[key]) {
+    FACT_TEMPLATES[key].forEach(f => {
+      const v = val('eff_' + f.key);
+      if (v) facts.push({ label: f.label, content: v });
+    });
+  }
+  const genericFacts = val('eff_facts');
+  if (genericFacts) facts.push({ label: '', content: genericFacts });
+  const caseType = val('caseTypeSel') || '民事纠纷';
+  const plName = val('elemPlName');
+  return {
+    caseType: caseType,
+    key: key,
+    plaintiff: { name: plName, gender: val('elemPlGender'), birth: val('elemPlBirth'), nation: val('elemPlEthnic'), idNo: val('elemPlId'), addr: val('elemPlAddr'), phone: val('elemPlPhone') },
+    defendant: { name: val('elemDfName'), gender: val('elemDfGender'), birth: val('elemDfBirth'), nation: val('elemDfEthnic'), idNo: val('elemDfId'), addr: val('elemDfAddr'), phone: val('elemDfPhone') },
+    claims: claims,
+    evidence: evidence,
+    facts: facts,
+    court: val('elemCourt'),
+    signerName: plName,
+    signDate: today()
+  };
+}
+
+function fillElemForm(obj) {
+  const set = (id, v) => { const el = $(id); if (el) el.value = v || ''; };
+  const p = obj.plaintiff || {};
+  const d = obj.defendant || {};
+  set('elemPlName', p.name); set('elemPlGender', p.gender); set('elemPlBirth', p.birth);
+  set('elemPlEthnic', p.nation); set('elemPlId', p.idNo); set('elemPlAddr', p.addr || p.liveAddr); set('elemPlPhone', p.phone);
+  set('elemDfName', d.name); set('elemDfGender', d.gender); set('elemDfBirth', d.birth);
+  set('elemDfEthnic', d.nation); set('elemDfId', d.idNo); set('elemDfAddr', d.addr || d.liveAddr); set('elemDfPhone', d.phone);
+  const claims = (obj.claims || []).map((c, i) => (i + 1) + '. ' + c).join('\n');
+  const evs = (obj.evidence || []).map((e, i) => (i + 1) + '. ' + (typeof e === 'string' ? e : (e.name || JSON.stringify(e)))).join('\n');
+  set('elemClaims', claims);
+  set('elemEvidence', evs);
+  set('elemCourt', obj.court || '');
+  const caseType = obj.caseType || '';
+  if (caseType) {
+    currentDraft.caseType = caseType;
+    const sel = $('caseTypeSel');
+    const opts = Array.prototype.slice.call(sel.options);
+    const hit = opts.find(o => o.value === caseType) || opts.find(o => caseType.includes(o.value) || o.value.includes(caseType));
+    if (hit) sel.value = hit.value;
+    else {
+      const opt = document.createElement('option');
+      opt.value = caseType; opt.textContent = caseType;
+      sel.appendChild(opt); sel.value = caseType;
+    }
+  }
+  const key = elemKeyOf(caseType);
+  renderElemFactFields(key);
+  const ff = obj.factFields || {};
+  if (key && FACT_TEMPLATES[key]) {
+    FACT_TEMPLATES[key].forEach(f => {
+      let v = ff[f.key] || '';
+      if (!v) {
+        for (const k in ff) {
+          if (String(ff[k]) && (k.includes(f.label) || f.label.includes(k))) { v = ff[k]; break; }
+        }
+      }
+      set('eff_' + f.key, v);
+    });
+  } else {
+    const lines = [];
+    for (const k in ff) { if (String(ff[k]).trim()) lines.push(k + '：' + String(ff[k]).trim()); }
+    if (obj.factReason) lines.push('事实与理由：' + obj.factReason);
+    set('eff_facts', lines.join('\n'));
+  }
+  const missing = [];
+  if (!p.name) missing.push('原告姓名');
+  if (!d.name) missing.push('被告姓名');
+  if (!(obj.claims || []).length) missing.push('诉讼请求');
+  if (!(obj.evidence || []).length) missing.push('证据清单');
+  const mbox = $('elemMissing');
+  if (missing.length) {
+    mbox.style.display = '';
+    mbox.innerHTML = '⚠️ 以下要素 AI 未能识别，请在表单中补充：<b>' + missing.join('、') + '</b>';
+  } else {
+    mbox.style.display = 'none';
+  }
+  elemFormFilled = true;
+  $('draftElemForm').style.display = '';
+  $('draftElemForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function runExtractFill() {
+  const material = currentDraft.material || $('draftMaterial').value.trim();
+  if (!material) { toast('请先粘贴素材'); return; }
+  currentDraft.material = material;
+  const prevHtml = $('draftPrepText').innerHTML;
+  $('draftPrep').style.display = '';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在提取要素并回填表单…</span>';
+  const prompt = '你是法律文书要素提取专家。请从下面的案件素材中提取撰写民事起诉状所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
+    '案由请优先从这些中选择：民间借贷纠纷、离婚纠纷、买卖合同纠纷、机动车交通事故责任纠纷、金融借款合同纠纷、劳动争议纠纷、物业服务合同纠纷、房屋租赁合同纠纷、建设工程合同纠纷、房屋买卖合同纠纷、信用卡纠纷、政府信息公开、行政复议、行政许可、行政处罚、刑事自诉；其他情况按素材判断最接近的案由。\n' +
+    'JSON 结构：\n' +
+    '{\n' +
+    '  "caseType": "案由名称",\n' +
+    '  "plaintiff": { "name":"", "gender":"男/女", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"" },\n' +
+    '  "defendant": { "name":"", "gender":"", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"" },\n' +
+    '  "claims": ["诉讼请求1","诉讼请求2"],\n' +
+    '  "evidence": ["证据1（名称｜来源/形式｜证明目的）","证据2"],\n' +
+    '  "factFields": { "与案由相关的要素标签":"内容", "要素2":"内容" },\n' +
+    '  "factReason": "完整事实与理由段落（如 factFields 已充分可留空）",\n' +
+    '  "court": "受理法院，未知则空"\n' +
+    '}\n' +
+    '要求：未提及的字段一律为空字符串或空数组，绝不编造。\n素材：\n' + material;
+  const r = await callLLM([
+    { role: 'system', content: SYS },
+    { role: 'user', content: prompt }
+  ], { temp: 0.1, maxTokens: 4000, note: '要素提取' });
+  const obj = parseJsonStrict(r.text);
+  fillElemForm(obj);
+  $('draftPrepText').innerHTML = (prevHtml && prevHtml.indexOf('loading') < 0)
+    ? prevHtml
+    : '<div class="ok-box">要素提取完成，请在下方表单核对、修改，再点「生成双版文书」。</div>';
+  const issues = checkMaterialCompleteness(material);
+  if (issues.length) {
+    const mbox = $('elemMissing');
+    mbox.style.display = '';
+    mbox.innerHTML = '⚠️ ' + issues.map(escHtml).join('<br>');
+  }
+}
+
+async function extractAndFill() {
+  if (!tryLock()) return;
+  try {
+    await runExtractFill();
+  } catch (e) {
+    if (e.needSetup) goTab('settings');
+    $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    unlock();
+  }
+}
+
+function buildTradPrompt(data) {
+  const p = data.plaintiff || {};
+  const d = data.defendant || {};
+  const claims = (data.claims || []).map((c, i) => (i + 1) + '. ' + c).join('\n') || '（待补充）';
+  const facts = (data.facts || []).map(f => (f.label ? '【' + f.label + '】' : '') + (f.content || '')).join('\n');
+  const evidence = (data.evidence || []).map((e, i) => (i + 1) + '. ' + e).join('\n') || '（待补充）';
+  const title = elemTitleOf(data.key, data.caseType);
+  return '请根据以下案件信息，生成一份完整的《' + title + '》（传统叙述式），可直接打印提交。\n' +
+    '【原告】姓名：' + (p.name || '（待补充）') + '，性别：' + (p.gender || '（待补充）') + '，出生日期：' + (p.birth || '（待补充）') + '，民族：' + (p.nation || '（待补充）') + '，住：' + (p.addr || '（待补充）') + '，联系电话：' + (p.phone || '（待补充）') + '，身份证号：' + (p.idNo || '（待补充）') + '\n' +
+    '【被告】姓名：' + (d.name || '（待补充）') + '，性别：' + (d.gender || '（待补充）') + '，出生日期：' + (d.birth || '（待补充）') + '，民族：' + (d.nation || '（待补充）') + '，住：' + (d.addr || '（待补充）') + '，联系电话：' + (d.phone || '（待补充）') + '，身份证号：' + (d.idNo || '（待补充）') + '\n' +
+    '【案由】' + (data.caseType || '由你判断') + '\n' +
+    '【诉讼请求】\n' + claims + '\n' +
+    '【事实与理由要素】\n' + (facts || '（待补充）') + '\n' +
+    '【证据】\n' + evidence + '\n' +
+    '【受理法院】' + (data.court || '（待补充）') + '\n\n' +
+    '输出要求：1）标题居中；2）完整包含：标题、原告/被告信息、诉讼请求、事实与理由（不少于300字，结合要素展开并引用真实法律依据，不确定写“依据相关规定”）、证据清单、此致XX人民法院、具状人（签字）与日期留空；3）缺失信息写“（待补充）”，绝不编造事实、金额、日期、案号、人名；4）不用 Markdown，不用代码块，不要解释。';
+}
+
+async function genDualComplaint() {
+  if (!tryLock()) return;
+  const btn = $('btnDraftGenerate');
+  try {
+    if (!currentDraft.material) { toast('请先粘贴素材'); return; }
+    if (!elemFormFilled) {
+      await runExtractFill();
+    }
+    const data = readElemForm();
+    const key = data.key;
+    const title = elemTitleOf(key, data.caseType);
+    $('draftPrep').style.display = '';
+    $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在生成要素式（本地模板）＋传统式（AI）双版文书…</span>';
+    const elemText = buildElemTextLines({
+      title: title,
+      pName: data.plaintiff.name, pGender: data.plaintiff.gender, pBirth: data.plaintiff.birth,
+      pNation: data.plaintiff.nation, pPhone: data.plaintiff.phone, pAddr: data.plaintiff.addr,
+      pIdNo: data.plaintiff.idNo, pLive: '',
+      dName: data.defendant.name, dGender: data.defendant.gender, dBirth: data.defendant.birth,
+      dNation: data.defendant.nation, dPhone: data.defendant.phone, dAddr: data.defendant.addr,
+      dIdNo: data.defendant.idNo, dLive: '',
+      claims: data.claims, evidences: data.evidence, facts: data.facts,
+      court: data.court || '（待补充）', signerName: data.signerName, signDate: data.signDate,
+      serviceAddr: data.plaintiff.addr, servicePhone: data.plaintiff.phone
+    }).join('\n');
+    const r = await callLLM([
+      { role: 'system', content: SYS },
+      { role: 'user', content: buildTradPrompt(data) }
+    ], { temp: 0.3, maxTokens: 6000, note: '生成·传统式起诉状' });
+    const tradText = stripMarkdown(r.text);
+    const docs = [
+      { name: '要素式起诉状', text: elemText },
+      { name: '传统式起诉状', text: tradText }
+    ];
+    currentDraft.docs = docs;
+    renderDraftDocs(docs);
+    $('draftPrep').style.display = 'none';
+    $('draftResult').style.display = '';
+    $('selfCheckArea').innerHTML = '';
+    window.scrollTo({ top: $('draftResult').offsetTop - 90, behavior: 'smooth' });
+  } catch (e) {
+    if (e.needSetup) goTab('settings');
+    $('draftPrepText').innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
+  } finally {
+    if (btn) btn.disabled = false;
+    unlock();
+  }
+}
+
+function exportTextDoc(fileName, text) {
+  const html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>法务文书</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
+  const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+function exportBothDocs() {
+  if (!currentDraft.docs || currentDraft.docs.length < 2) { toast('请先生成双版文书'); return; }
+  const stamp = today().replace(/[年月日]/g, '');
+  const [elem, trad] = currentDraft.docs;
+  exportTextDoc('要素式起诉状_' + stamp + '.doc', elem.text);
+  setTimeout(() => exportTextDoc('传统式起诉状_' + stamp + '.doc', trad.text), 400);
+  toast('已导出两份 Word');
 }
 
 /* ===== 法务AI 3.2 · 核心逻辑（二） ===== */
 
 /* ==================== 证据分析 ==================== */
 async function evidenceRun() {
+  if (!tryLock()) return;
   const material = $('evMaterial').value.trim();
-  if (!material) { toast('请先粘贴案情和证据'); return; }
+  if (!material) { unlock(); toast('请先粘贴案情和证据'); return; }
   const box = $('evResult');
   box.innerHTML = '';
   const btn = $('btnEvRun');
@@ -880,13 +1490,15 @@ async function evidenceRun() {
     box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
+    unlock();
   }
 }
 
 /* ==================== 法律研究 ==================== */
 async function researchRun() {
+  if (!tryLock()) return;
   const q = $('rsQ').value.trim();
-  if (!q) { toast('请输入要研究的问题'); return; }
+  if (!q) { unlock(); toast('请输入要研究的问题'); return; }
   const box = $('rsResult');
   box.innerHTML = '';
   const btn = $('btnRsRun');
@@ -905,6 +1517,7 @@ async function researchRun() {
     box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
+    unlock();
   }
 }
 document.querySelectorAll('#tab-research .chip').forEach(ch => {
@@ -1012,7 +1625,8 @@ function governBack() {
   $('governResult').innerHTML = '';
 }
 async function governRun() {
-  if (!currentGovern) return;
+  if (!tryLock()) return;
+  if (!currentGovern) { unlock(); return; }
   const vals = {};
   currentGovern.fields.forEach(f => { vals[f.k] = $('gf_' + f.k).value.trim(); });
   if (currentGovern.fields.every(f => !vals[f.k])) { toast('请至少填写一项内容'); return; }
@@ -1055,6 +1669,7 @@ async function governRun() {
     box.innerHTML = '<div class="err-box">' + escHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
+    unlock();
   }
 }
 
@@ -1119,6 +1734,7 @@ function updateModelPill() {
   $('modelPill').textContent = key ? (PROVIDERS[p].label + ' · ' + model) : '未设置密钥 · ' + PROVIDERS[p].label;
 }
 async function testConnection() {
+  if (!tryLock()) return;
   saveSettings();
   const btn = event.target;
   btn.disabled = true;
@@ -1135,6 +1751,7 @@ async function testConnection() {
   } finally {
     btn.disabled = false;
     btn.textContent = '🔌 测试连接';
+    unlock();
   }
 }
 
