@@ -53,6 +53,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary2
 .err-box{background:#fdecea;border:1px solid #f3bcb6;border-radius:10px;padding:10px 12px;font-size:13px;color:#7c241c;line-height:1.7;margin:10px 0}
 .loading{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#eef6fb;border:1px solid #c9e2f0;border-radius:10px;font-size:14px;color:var(--primary);margin:10px 0}
 .spin{width:18px;height:18px;border:3px solid #c9e2f0;border-top-color:var(--primary);border-radius:50%;animation:sp 1s linear infinite}
+.cancel-btn{margin-left:auto;padding:5px 12px;font-size:13px;border:1px solid var(--primary);background:#fff;color:var(--primary);border-radius:8px;cursor:pointer;flex-shrink:0}
+.cancel-btn:hover{background:#eef6fb}
 @keyframes sp{to{transform:rotate(360deg)}}
 .doc-body{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:18px 20px;font-family:"仿宋","FangSong","STFangsong",serif;font-size:16px;line-height:2;white-space:pre-wrap;word-break:break-word;max-height:70vh;overflow:auto}
 .doc-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
@@ -503,6 +505,17 @@ function tryLock() {
   return true;
 }
 function unlock() { busy = false; }
+let activeCtrl = null;
+let cancelRequested = false;
+function cancelCurrentRequest() {
+  if (activeCtrl) {
+    cancelRequested = true;
+    activeCtrl.abort();
+    toast('正在取消…');
+  } else {
+    toast('当前没有正在进行的请求');
+  }
+}
 function fmtTime(ts) {
   const d = new Date(ts);
   const p = n => (n < 10 ? '0' + n : '' + n);
@@ -532,7 +545,7 @@ function showLoading(container, text) {
   const d = document.createElement('div');
   d.className = 'loading';
   d.id = 'loadingBox';
-  d.innerHTML = '<span class="spin"></span><span>' + escHtml(text || 'AI 正在处理，请稍候…') + '</span>';
+  d.innerHTML = '<span class="spin"></span><span>' + escHtml(text || 'AI 正在处理，请稍候…') + '</span><button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button>';
   (typeof container === 'string' ? $(container) : container).appendChild(d);
 }
 function hideLoading() {
@@ -544,6 +557,17 @@ function hideLoading() {
 function estCost(p, inT, outT) {
   const r = (state.rates && state.rates[p]) || DEFAULT_STATE.rates[p] || { in: 0, out: 0 };
   return ((inT || 0) * r.in + (outT || 0) * r.out) / 1000000;
+}
+function abortableSleep(ms, ctrl) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { ctrl.signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    function onAbort() {
+      clearTimeout(t);
+      ctrl.signal.removeEventListener('abort', onAbort);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }
+    ctrl.signal.addEventListener('abort', onAbort);
+  });
 }
 async function callLLM(messages, opts) {
   opts = opts || {};
@@ -562,52 +586,98 @@ async function callLLM(messages, opts) {
     throw err;
   }
   const ctrl = new AbortController();
+  activeCtrl = ctrl;
+  cancelRequested = false;
   const timer = setTimeout(() => ctrl.abort(), opts.timeout || 180000);
-  let res;
-  try {
-    res = await fetch(base, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({
-        model: model,
-        messages: messages,
-        temperature: opts.temp != null ? opts.temp : 0.3,
-        max_tokens: opts.maxTokens || 8192,
-        stream: false
-      }),
-      signal: ctrl.signal
-    });
-  } catch (e) {
+  const finish = () => {
     clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error('请求超时（180 秒），请重试或换更快的模型');
-    throw new Error('网络请求失败：' + e.message);
-  }
-  clearTimeout(timer);
-  if (!res.ok) {
-    let detail = '';
+    if (activeCtrl === ctrl) activeCtrl = null;
+  };
+  const timeoutSec = Math.round((opts.timeout || 180000) / 1000);
+  const abortMsg = () => cancelRequested ? '已取消本次请求' : '请求超时（' + timeoutSec + ' 秒）：已自动停止，请重试或换更快的模型';
+  const MAX_RETRY = 2;
+  const isRateLimited = (status, msg) => status === 429 || /(too many requests|rate.?limit|请求过于频繁|输入过于频繁|限流)/i.test(msg || '');
+  const isTransient = status => status >= 500 || status === 408;
+  let finalError = null;
+  for (let attempt = 0; attempt <= MAX_RETRY && !finalError; attempt++) {
+    let res = null;
     try {
-      const j = await res.json();
-      detail = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
-    } catch (e) {}
-    const t = String(detail).toLowerCase();
-    if (res.status === 401) throw new Error('API 密钥无效或已过期：' + String(detail).slice(0, 120));
-    if (res.status === 402 || t.indexOf('insufficient') >= 0 || t.indexOf('余额') >= 0 || t.indexOf('balance') >= 0) {
-      throw new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
+      res = await fetch(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: opts.temp != null ? opts.temp : 0.3,
+          max_tokens: opts.maxTokens || 8192,
+          stream: false
+        }),
+        signal: ctrl.signal
+      });
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const j = await res.json();
+          detail = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
+        } catch (e) {}
+        const t = String(detail).toLowerCase();
+        if (res.status === 401) { finalError = new Error('API 密钥无效或已过期：' + detail.slice(0, 120)); break; }
+        if (res.status === 402 || t.indexOf('insufficient') >= 0 || t.indexOf('余额') >= 0 || t.indexOf('balance') >= 0) {
+          finalError = new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
+          break;
+        }
+        if (isRateLimited(res.status, detail) || isTransient(res.status)) {
+          if (attempt < MAX_RETRY) {
+            const wait = (isRateLimited(res.status, detail) ? 1500 : 1000) * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
+            toast((isRateLimited(res.status, detail) ? '请求过多' : '服务暂时不稳定（' + res.status + '）') + '，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
+            try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
+            continue;
+          }
+          finalError = isRateLimited(res.status, detail)
+            ? new Error('请求过于频繁（限流）：已自动重试 ' + MAX_RETRY + ' 次仍失败，请稍等 1 分钟再试；若反复出现，请到「模型与费用」切换到智谱免费通道（glm-4.7-flash）')
+            : new Error('接口暂时不稳定（' + res.status + '）：已自动重试 ' + MAX_RETRY + ' 次仍失败，请稍后再试');
+          break;
+        }
+        finalError = new Error('接口返回错误（' + res.status + '）：' + (detail || '未知错误').slice(0, 200));
+        break;
+      }
+      let j = null;
+      try { j = await res.json(); } catch (e) { finalError = new Error('接口返回内容无法解析，请重试'); break; }
+      const errMsg = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
+      if (!j.choices || !j.choices[0]) {
+        if (isRateLimited(0, errMsg) && attempt < MAX_RETRY) {
+          const wait = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
+          toast('请求过多，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
+          try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
+          continue;
+        }
+        finalError = new Error('接口返回异常：' + (errMsg || '无有效内容').slice(0, 200));
+        break;
+      }
+      const text = (j.choices[0].message && j.choices[0].message.content) || '';
+      const u = j.usage || {};
+      const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
+      const cost = estCost(p, inT, outT);
+      state.ledger.unshift({ t: Date.now(), provider: p, model: model, in: inT, out: outT, cost: cost, note: opts.note || '' });
+      if (state.ledger.length > 500) state.ledger.length = 500;
+      saveState();
+      renderLedger();
+      updateStats();
+      finish();
+      return { text: text, inT: inT, outT: outT, cost: cost };
+    } catch (e) {
+      if (e.name === 'AbortError' || ctrl.signal.aborted) { finalError = new Error(abortMsg()); break; }
+      if (attempt < MAX_RETRY) {
+        const wait = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
+        toast('网络异常，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
+        try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
+        continue;
+      }
+      finalError = new Error('网络请求失败：' + e.message);
     }
-    if (res.status === 429) throw new Error('请求过于频繁（限流）：请稍等几秒再试；若反复出现，请到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
-    throw new Error('接口返回错误（' + res.status + '）：' + (detail || '未知错误').slice(0, 200));
   }
-  const j = await res.json();
-  const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
-  const u = j.usage || {};
-  const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
-  const cost = estCost(p, inT, outT);
-  state.ledger.unshift({ t: Date.now(), provider: p, model: model, in: inT, out: outT, cost: cost, note: opts.note || '' });
-  if (state.ledger.length > 500) state.ledger.length = 500;
-  saveState();
-  renderLedger();
-  updateStats();
-  return { text: text, inT: inT, outT: outT, cost: cost };
+  finish();
+  throw finalError;
 }
 
 /* ---------- 文书系统提示词 ---------- */
@@ -747,7 +817,7 @@ async function draftAnalyze(force) {
   elemFormFilled = false;
   $('draftElemForm').style.display = 'none';
   $('draftPrep').style.display = '';
-  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在分析素材，识别文书类型与关键要素…</span>';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在分析素材，识别文书类型与关键要素…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
   try {
     const prompt = '请分析下面的素材，判断应出具什么文书，并整理关键要素。\n目标文书类型：' + MODE_NAMES[mode] + '\n素材：\n' + material +
       '\n\n请按以下格式输出（不要用表格）：\n文书类型：…\n案由：…\n当事人：…\n关键事实：1)… 2)…\n风险与注意（时效/管辖/证据/利率金额等）：1)… 2)…\n缺失信息（需要当事人补充的）：1)… 2)…';
@@ -808,7 +878,7 @@ async function draftGenerate() {
     return genDualComplaint();
   }
   $('draftPrep').style.display = '';
-  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在起草文书（' + MODE_NAMES[mode] + '），一般 30~90 秒…</span>';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在起草文书（' + MODE_NAMES[mode] + '），一般 30~90 秒…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
   const btn = $('btnDraftGenerate');
   btn.disabled = true;
   try {
@@ -927,7 +997,7 @@ async function selfCheck() {
   if (!text) { toast('请先生成文书'); return; }
   if (!tryLock()) return;
   const box = $('selfCheckArea');
-  box.innerHTML = '<span class="loading"><span class="spin"></span>AI 正在复核文书…</span>';
+  box.innerHTML = '<span class="loading"><span class="spin"></span>AI 正在复核文书…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
   try {
     const r = await callLLM([
       { role: 'system', content: SYS },
@@ -1334,7 +1404,7 @@ async function runExtractFill() {
   currentDraft.material = material;
   const prevHtml = $('draftPrepText').innerHTML;
   $('draftPrep').style.display = '';
-  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在提取要素并回填表单…</span>';
+  $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在提取要素并回填表单…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
   const prompt = '你是法律文书要素提取专家。请从下面的案件素材中提取撰写民事起诉状所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
     '案由请优先从这些中选择：民间借贷纠纷、离婚纠纷、买卖合同纠纷、机动车交通事故责任纠纷、金融借款合同纠纷、劳动争议纠纷、物业服务合同纠纷、房屋租赁合同纠纷、建设工程合同纠纷、房屋买卖合同纠纷、信用卡纠纷、政府信息公开、行政复议、行政许可、行政处罚、刑事自诉；其他情况按素材判断最接近的案由。\n' +
     'JSON 结构：\n' +
@@ -1408,7 +1478,7 @@ async function genDualComplaint() {
     const key = data.key;
     const title = elemTitleOf(key, data.caseType);
     $('draftPrep').style.display = '';
-    $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在生成要素式（本地模板）＋传统式（AI）双版文书…</span>';
+    $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在生成要素式（本地模板）＋传统式（AI）双版文书…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
     const elemText = buildElemTextLines({
       title: title,
       pName: data.plaintiff.name, pGender: data.plaintiff.gender, pBirth: data.plaintiff.birth,
@@ -1637,27 +1707,65 @@ async function governRun() {
   showLoading(box, 'AI 正在根据场景要素生成文书…');
   try {
     const desc = currentGovern.fields.map(f => f.label + '：' + (vals[f.k] || '（未提供）')).join('\n');
-    let r;
+    let r, docs;
     if (currentGovern.id === 'zhengming') {
       r = await callLLM([
         { role: 'system', content: SYS },
         { role: 'user', content: '请生成一份村委会《情况说明/证明》草稿：用语客观、事实清楚、落款留空（村委会名称、日期留空），并附一行提示“需加盖村委会公章”。\n要素：\n' + desc }
       ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+      docs = [{ name: currentGovern.name + '·成稿', text: r.text.trim() }];
     } else if (currentGovern.id === 'cunwu') {
       r = await callLLM([
         { role: 'system', content: SYS },
         { role: 'user', content: '请生成规范的《信访反映材料》：反映人信息、被反映单位/人员、反映事项、事实经过、诉求、联系方式（缺失写待补充）。\n要素：\n' + desc }
       ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+      docs = [{ name: currentGovern.name + '·成稿', text: r.text.trim() }];
     } else {
+      // 起诉状类场景：双引擎——AI 提取结构化要素，要素式本地生成，传统式 AI 独立生成
+      const obj = await extractGovernElements(desc, currentGovern.name);
+      const caseType = obj.caseType || currentGovern.name;
+      const key = elemKeyOf(caseType);
+      const title = elemTitleOf(key, caseType);
+      const facts = [];
+      if (obj.factFields && typeof obj.factFields === 'object') {
+        Object.keys(obj.factFields).forEach(k => {
+          const v = String(obj.factFields[k] || '').trim();
+          if (v) facts.push({ label: k, content: v });
+        });
+      }
+      if (String(obj.factReason || '').trim()) facts.push({ label: '', content: String(obj.factReason).trim() });
+      const p = obj.plaintiff || {}, df = obj.defendant || {};
+      const data = {
+        caseType: caseType,
+        key: key,
+        plaintiff: p,
+        defendant: df,
+        claims: obj.claims || [],
+        evidence: obj.evidence || [],
+        facts: facts,
+        court: obj.court || '',
+        signerName: p.name || '',
+        signDate: today()
+      };
+      const elemText = buildElemTextLines({
+        title: title,
+        pName: p.name, pGender: p.gender, pBirth: p.birth, pNation: p.nation, pPhone: p.phone, pAddr: p.addr, pIdNo: p.idNo, pLive: p.liveAddr || '',
+        dName: df.name, dGender: df.gender, dBirth: df.birth, dNation: df.nation, dPhone: df.phone, dAddr: df.addr, dIdNo: df.idNo, dLive: df.liveAddr || '',
+        claims: data.claims, evidences: data.evidence, facts: data.facts,
+        court: data.court || '（待补充）', signerName: data.signerName, signDate: data.signDate,
+        serviceAddr: p.addr, servicePhone: p.phone
+      }).join('\n');
       r = await callLLM([
         { role: 'system', content: SYS },
-        { role: 'user', content: '请根据要素生成民事起诉状，一案两份、内容一致：第一份以“【要素式】民事起诉状”为标题（当事人信息、诉讼请求和依据、事实和理由、证据清单、此致XX人民法院）；第二份以“【传统式】民事起诉状”为标题（完整叙述式）。两份之间用单独一行“=====要素式完毕=====”分隔。场景：' + currentGovern.name + '。缺失信息写（待补充）。\n要素：\n' + desc }
-      ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
+        { role: 'user', content: buildTradPrompt(data) }
+      ], { temp: 0.3, maxTokens: 6000, note: '基层治理·' + currentGovern.name });
+      const tradText = stripMarkdown(r.text);
+      docs = [
+        { name: '要素式起诉状', text: elemText },
+        { name: '传统式起诉状', text: tradText }
+      ];
     }
     hideLoading();
-    const docs = currentGovern.id === 'cunwu' || currentGovern.id === 'zhengming'
-      ? [{ name: currentGovern.name + '·成稿', text: r.text.trim() }]
-      : splitDocs(r.text, 'complaint');
     currentDraft.docs = docs;
     currentDraft.material = desc;
     currentDraft.caseId = null;
@@ -1671,6 +1779,18 @@ async function governRun() {
     btn.disabled = false;
     unlock();
   }
+}
+
+async function extractGovernElements(desc, scenario) {
+  const prompt = '你是法律文书要素提取专家。请从下面的基层治理场景素材中提取撰写民事起诉状所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
+    '场景：' + scenario + '\n' +
+    'JSON 结构：{"caseType":"案由名称","plaintiff":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"defendant":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"claims":["诉讼请求1"],"evidence":["证据1"],"factFields":{"要素标签":"内容"},"factReason":"","court":""}\n' +
+    '要求：素材未提及的字段一律为空字符串或空数组，绝不编造；诉讼请求可多条。\n素材：\n' + desc;
+  const r = await callLLM([
+    { role: 'system', content: SYS },
+    { role: 'user', content: prompt }
+  ], { temp: 0.1, maxTokens: 4000, note: '基层治理·要素提取' });
+  return parseJsonStrict(r.text);
 }
 
 /* ==================== 模型与费用 ==================== */
