@@ -499,8 +499,16 @@ function toast(msg, ms) {
 }
 /* ---------- 全局并发锁（防止“输入过于频繁”） ---------- */
 let busy = false;
+let rateLimitedUntil = 0;
+let lastCallAt = 0;
+const REQUEST_GAP_MS = 1200;
 function tryLock() {
   if (busy) { toast('上一步还在进行中，请稍候再点'); return false; }
+  const wait = rateLimitedUntil - Date.now();
+  if (wait > 0) {
+    toast('限流冷却中，约 ' + Math.ceil(wait / 1000) + ' 秒后可再试');
+    return false;
+  }
   busy = true;
   return true;
 }
@@ -569,18 +577,37 @@ function abortableSleep(ms, ctrl) {
     ctrl.signal.addEventListener('abort', onAbort);
   });
 }
+/* 429 业务码分类（智谱官方错误码：1302 账户速率 / 1305 平台过载 / 1308-1321 额度上限 / 1113 欠费） */
+function classifyRateLimit(code, msg) {
+  const t = String(msg || '') + ' ' + String(code || '');
+  if (/欠费|1113/.test(t)) return 'balance';
+  if (/使用上限|限额|1308|1310|1316|1317|1318|1319|1320|1321/.test(t)) return 'quota';
+  if (/访问量过大|服务过载|过载|1305/.test(t)) return 'overload';
+  if (/速率限制|并发|请求过于频繁|输入过于频繁|过于密集|限流|1302|1313/.test(t)) return 'account';
+  return 'generic';
+}
+const channelLimitedUntil = {};
+function channelLimited(cp) { return (channelLimitedUntil[cp] || 0) > Date.now(); }
+function markChannelLimited(cp, ms) { channelLimitedUntil[cp] = Date.now() + ms; }
+function providerChain() {
+  const primary = state.provider;
+  const hasKey = x => !!(state.keys && state.keys[x]) && !!((state.bases && state.bases[x]) || PROVIDERS[x].base);
+  const backups = ['qwen', 'deepseek', 'custom'].filter(x => x !== primary && hasKey(x));
+  let list = [primary, ...backups];
+  if (channelLimited(primary) && backups.length) {
+    list = [...backups.filter(b => !channelLimited(b)), primary, ...backups.filter(b => channelLimited(b))];
+  }
+  return list;
+}
 async function callLLM(messages, opts) {
   opts = opts || {};
-  const p = state.provider;
-  const base = (state.bases && state.bases[p]) || PROVIDERS[p].base;
-  const model = (state.models && state.models[p]) || PROVIDERS[p].model;
-  const key = state.keys && state.keys[p];
-  if (!key) {
+  const primary = state.provider;
+  if (!(state.keys && state.keys[primary])) {
     const err = new Error('未配置 API 密钥，请先到「模型与费用」填写');
     err.needSetup = true;
     throw err;
   }
-  if (!base) {
+  if (!((state.bases && state.bases[primary]) || PROVIDERS[primary].base)) {
     const err = new Error('未配置接口地址');
     err.needSetup = true;
     throw err;
@@ -595,89 +622,153 @@ async function callLLM(messages, opts) {
   };
   const timeoutSec = Math.round((opts.timeout || 180000) / 1000);
   const abortMsg = () => cancelRequested ? '已取消本次请求' : '请求超时（' + timeoutSec + ' 秒）：已自动停止，请重试或换更快的模型';
-  const MAX_RETRY = 2;
-  const isRateLimited = (status, msg) => status === 429 || /(too many requests|rate.?limit|请求过于频繁|输入过于频繁|限流)/i.test(msg || '');
-  const isTransient = status => status >= 500 || status === 408;
-  let finalError = null;
-  for (let attempt = 0; attempt <= MAX_RETRY && !finalError; attempt++) {
-    let res = null;
-    try {
-      res = await fetch(base, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: opts.temp != null ? opts.temp : 0.3,
-          max_tokens: opts.maxTokens || 8192,
-          stream: false
-        }),
-        signal: ctrl.signal
-      });
-      if (!res.ok) {
-        let detail = '';
-        try {
-          const j = await res.json();
-          detail = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
-        } catch (e) {}
-        const t = String(detail).toLowerCase();
-        if (res.status === 401) { finalError = new Error('API 密钥无效或已过期：' + detail.slice(0, 120)); break; }
-        if (res.status === 402 || t.indexOf('insufficient') >= 0 || t.indexOf('余额') >= 0 || t.indexOf('balance') >= 0) {
-          finalError = new Error('账户余额不足：请充值，或到「模型与费用」切换到智谱免费通道（glm-4.7-flash）');
-          break;
-        }
-        if (isRateLimited(res.status, detail) || isTransient(res.status)) {
-          if (attempt < MAX_RETRY) {
-            const wait = (isRateLimited(res.status, detail) ? 1500 : 1000) * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
-            toast((isRateLimited(res.status, detail) ? '请求过多' : '服务暂时不稳定（' + res.status + '）') + '，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
-            try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
-            continue;
-          }
-          finalError = isRateLimited(res.status, detail)
-            ? new Error('请求过于频繁（限流）：已自动重试 ' + MAX_RETRY + ' 次仍失败，请稍等 1 分钟再试；若反复出现，请到「模型与费用」切换到智谱免费通道（glm-4.7-flash）')
-            : new Error('接口暂时不稳定（' + res.status + '）：已自动重试 ' + MAX_RETRY + ' 次仍失败，请稍后再试');
-          break;
-        }
-        finalError = new Error('接口返回错误（' + res.status + '）：' + (detail || '未知错误').slice(0, 200));
-        break;
-      }
-      let j = null;
-      try { j = await res.json(); } catch (e) { finalError = new Error('接口返回内容无法解析，请重试'); break; }
-      const errMsg = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
-      if (!j.choices || !j.choices[0]) {
-        if (isRateLimited(0, errMsg) && attempt < MAX_RETRY) {
-          const wait = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
-          toast('请求过多，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
-          try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
+  const abortErr = () => { finish(); return new Error(abortMsg()); };
+  const waitAbortable = async ms => {
+    try { await abortableSleep(ms, ctrl); } catch (ab) { throw abortErr(); }
+  };
+  const WAITS = window.__WAITS || { overload: [10000, 25000], generic: [5000, 12000], err: [2000, 5000] };
+  const COOLDOWN = { account: 45000, quota: 60000, overload: 30000, generic: 20000 };
+  let lastRate = null;
+  let lastErr = null;
+
+  const tryProvider = async (cp, pi) => {
+    const base = (state.bases && state.bases[cp]) || PROVIDERS[cp].base;
+    const model = (state.models && state.models[cp]) || PROVIDERS[cp].model;
+    const key = state.keys && state.keys[cp];
+    for (let attempt = 0; ; attempt++) {
+      let res = null;
+      try {
+        const gap = lastCallAt + REQUEST_GAP_MS - Date.now();
+        if (gap > 0) await waitAbortable(gap);
+        lastCallAt = Date.now();
+        res = await fetch(base, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: opts.temp != null ? opts.temp : 0.3,
+            max_tokens: opts.maxTokens || 8192,
+            stream: false
+          }),
+          signal: ctrl.signal
+        });
+      } catch (e) {
+        if (e.name === 'AbortError' || ctrl.signal.aborted) throw abortErr();
+        if (attempt < WAITS.err.length) {
+          const wait = WAITS.err[attempt] + Math.floor(Math.random() * 800);
+          toast('网络异常（' + PROVIDERS[cp].label + '），' + Math.round(wait / 1000) + ' 秒后自动重试…');
+          await waitAbortable(wait);
           continue;
         }
-        finalError = new Error('接口返回异常：' + (errMsg || '无有效内容').slice(0, 200));
-        break;
+        lastErr = new Error('网络请求失败：' + e.message);
+        return null;
+      }
+      if (!res.ok) {
+        let j = null, msg = '';
+        try { j = await res.json(); msg = (j.error && (j.error.message || JSON.stringify(j.error))) || ''; } catch (e) {}
+        const code = (j && j.error && String(j.error.code || '')) || '';
+        const t = (msg + ' ' + code).toLowerCase();
+        if (res.status === 401) { finish(); throw new Error('API 密钥无效或已过期（' + PROVIDERS[cp].label + '）：' + msg.slice(0, 120)); }
+        if (res.status === 402 || /insufficient|余额|balance|欠费/.test(t)) { finish(); throw new Error('账户余额不足（' + PROVIDERS[cp].label + '）：请充值或换其他通道'); }
+        const rate = classifyRateLimit(code, msg);
+        if (res.status === 429 || /(too many requests|rate.?limit|请求过于频繁|输入过于频繁|限流|访问量过大|速率限制|使用上限)/i.test(t)) {
+          if (rate === 'balance') { finish(); throw new Error('账户欠费（' + PROVIDERS[cp].label + '）：' + msg.slice(0, 120)); }
+          lastRate = lastRate || { type: rate, msg: msg, code: code, provider: cp };
+          markChannelLimited(cp, COOLDOWN[rate] || 20000);
+          if (rate === 'account' || rate === 'quota') return null;
+          const waitArr = rate === 'overload' ? WAITS.overload : WAITS.generic;
+          if (attempt >= waitArr.length) return null;
+          const retryAfter = parseInt((res.headers && res.headers.get ? res.headers.get('retry-after') : '') || '', 10) * 1000 || 0;
+          const wait = Math.max(waitArr[attempt] + Math.floor(Math.random() * 800), retryAfter);
+          toast((rate === 'overload' ? '模型当前访问量大' : '请求过多') + '（' + PROVIDERS[cp].label + '），' + Math.round(wait / 1000) + ' 秒后自动重试…');
+          await waitAbortable(wait);
+          continue;
+        }
+        if (res.status >= 500 || res.status === 408) {
+          if (attempt < WAITS.err.length) {
+            const wait = WAITS.err[attempt] + Math.floor(Math.random() * 800);
+            toast('服务暂时不稳定（' + res.status + '），' + Math.round(wait / 1000) + ' 秒后自动重试…');
+            await waitAbortable(wait);
+            continue;
+          }
+          lastErr = new Error('接口暂时不稳定（' + res.status + '）：请稍后再试');
+          return null;
+        }
+        finish();
+        throw new Error('接口返回错误（' + res.status + '）：' + (msg || '未知错误').slice(0, 200));
+      }
+      let j = null;
+      try { j = await res.json(); } catch (e) { finish(); throw new Error('接口返回内容无法解析，请重试'); }
+      const errMsg = (j.error && (j.error.message || JSON.stringify(j.error))) || '';
+      const errCode = (j.error && String(j.error.code || '')) || '';
+      if (!j.choices || !j.choices[0]) {
+        const rate = classifyRateLimit(errCode, errMsg);
+        if (/使用上限|访问量过大|速率限制|请求过于频繁|限流|限额|1302|1305|1308/.test(errMsg + ' ' + errCode)) {
+          lastRate = lastRate || { type: rate, msg: errMsg, code: errCode, provider: cp };
+          markChannelLimited(cp, COOLDOWN[rate] || 20000);
+          return null;
+        }
+        finish();
+        throw new Error('接口返回异常：' + (errMsg || '无有效内容').slice(0, 200));
       }
       const text = (j.choices[0].message && j.choices[0].message.content) || '';
       const u = j.usage || {};
       const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
-      const cost = estCost(p, inT, outT);
-      state.ledger.unshift({ t: Date.now(), provider: p, model: model, in: inT, out: outT, cost: cost, note: opts.note || '' });
+      const cost = estCost(cp, inT, outT);
+      state.ledger.unshift({ t: Date.now(), provider: cp, model: model, in: inT, out: outT, cost: cost, note: (opts.note || '') + (pi > 0 ? '（备用通道）' : '') });
       if (state.ledger.length > 500) state.ledger.length = 500;
       saveState();
       renderLedger();
       updateStats();
       finish();
-      return { text: text, inT: inT, outT: outT, cost: cost };
-    } catch (e) {
-      if (e.name === 'AbortError' || ctrl.signal.aborted) { finalError = new Error(abortMsg()); break; }
-      if (attempt < MAX_RETRY) {
-        const wait = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
-        toast('网络异常，' + Math.round(wait / 1000) + ' 秒后自动重试（' + (attempt + 1) + '/' + MAX_RETRY + '）…');
-        try { await abortableSleep(wait, ctrl); } catch (ab) { finalError = new Error(abortMsg()); break; }
-        continue;
-      }
-      finalError = new Error('网络请求失败：' + e.message);
+      return { ok: true, text: text, inT: inT, outT: outT, cost: cost };
     }
-  }
-  finish();
-  throw finalError;
+  };
+
+  const doCall = async () => {
+    const providers = providerChain();
+    for (let pi = 0; pi < providers.length; pi++) {
+      const cp = providers[pi];
+      if (pi > 0) toast('「' + PROVIDERS[cp].label + '」备用通道重试…');
+      const out = await tryProvider(cp, pi);
+      if (out && out.ok) return out;
+      if (pi < providers.length - 1 && lastRate && lastRate.provider === cp) {
+        toast('「' + PROVIDERS[cp].label + '」受限，自动切换备用通道…');
+      }
+    }
+    finish();
+    if (lastRate) {
+      const r = lastRate;
+      rateLimitedUntil = Date.now() + (COOLDOWN[r.type] || 30000);
+      const channelName = (PROVIDERS[r.provider] && PROVIDERS[r.provider].label) || '当前通道';
+      const resetInfo = (String(r.msg).match(/限额将在\s*([^，。；;]+?)\s*重置/) || [])[1] || '';
+      const hints = {
+        account: '「' + channelName + '」达到账户速率限制（免费档并发仅 1 路，避免多个页面同时操作），已尝试备用通道仍失败；请等待 1 分钟再试，或在「模型与费用」填好通义千问/DeepSeek 密钥',
+        quota: '「' + channelName + '」使用额度已用尽' + (resetInfo ? '，约 ' + resetInfo + ' 重置' : '') + '；请到服务商控制台查看额度，或切换其他通道',
+        overload: '「' + channelName + '」模型当前访问量过大（高峰时段常见），已按官方建议延长间隔重试并尝试备用通道仍失败；请稍等 30 秒~1 分钟再试',
+        generic: '「' + channelName + '」请求被限流，已尝试备用通道仍失败；请稍后再试'
+      };
+      throw new Error('AI 请求失败：' + hints[r.type]);
+    }
+    throw lastErr || new Error('AI 请求失败，请重试');
+  };
+
+  const runWithLock = async () => {
+    if (!(navigator.locks && navigator.locks.request)) return doCall();
+    let entered = false;
+    try {
+      return await navigator.locks.request('legalai-ai-request-v1', { signal: ctrl.signal }, async () => {
+        entered = true;
+        return doCall();
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw abortErr();
+      if (entered) throw e; // doCall 自身的错误原样抛出，禁止重跑
+      return doCall();      // 仅锁 API 异常时降级直连
+    }
+  };
+  return await runWithLock();
 }
 
 /* ---------- 文书系统提示词 ---------- */
@@ -819,8 +910,13 @@ async function draftAnalyze(force) {
   $('draftPrep').style.display = '';
   $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>AI 正在分析素材，识别文书类型与关键要素…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
   try {
-    const prompt = '请分析下面的素材，判断应出具什么文书，并整理关键要素。\n目标文书类型：' + MODE_NAMES[mode] + '\n素材：\n' + material +
+    let prompt = '请分析下面的素材，判断应出具什么文书，并整理关键要素。\n目标文书类型：' + MODE_NAMES[mode] + '\n素材：\n' + material +
       '\n\n请按以下格式输出（不要用表格）：\n文书类型：…\n案由：…\n当事人：…\n关键事实：1)… 2)…\n风险与注意（时效/管辖/证据/利率金额等）：1)… 2)…\n缺失信息（需要当事人补充的）：1)… 2)…';
+    if (mode === 'complaint') {
+      prompt += '\n\n分析完成后，在最后单独输出一个 JSON 对象（不要 Markdown 代码块，不要额外解释），严格按此结构：\n' +
+        '{"caseType":"案由名称","plaintiff":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"defendant":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"claims":["诉讼请求1","诉讼请求2"],"evidence":["证据1（名称｜来源/形式｜证明目的）"],"factFields":{"与案由相关的要素标签":"内容"},"factReason":"","court":"受理法院，未知则空"}\n' +
+        '要求：素材未提及的字段一律为空字符串或空数组，绝不编造。';
+    }
     const r = await callLLM([
       { role: 'system', content: SYS },
       { role: 'user', content: prompt }
@@ -831,10 +927,27 @@ async function draftAnalyze(force) {
       currentDraft.caseType = caseTypeMatch[1].trim();
       $('caseTypeSel').value = currentDraft.caseType;
     }
-    $('draftPrepText').innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.8">' + escHtml(r.text) + '</pre>';
+    let displayText = r.text;
+    let elemObj = null;
+    if (mode === 'complaint') {
+      const sp = splitAnalysisJson(r.text);
+      elemObj = sp.obj;
+      if (elemObj) displayText = sp.text || '（分析完成，请在下方要素表单核对、修改）';
+    }
+    $('draftPrepText').innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.8">' + escHtml(displayText) + '</pre>';
     $('draftPrep').style.display = '';
     if (mode === 'complaint') {
-      await runExtractFill();
+      if (elemObj) {
+        fillElemForm(elemObj);
+        const issues = checkMaterialCompleteness(material);
+        if (issues.length) {
+          const mbox = $('elemMissing');
+          mbox.style.display = '';
+          mbox.innerHTML = '⚠️ ' + issues.map(escHtml).join('<br>');
+        }
+      } else {
+        await runExtractFill();
+      }
     }
   } catch (e) {
     if (e.needSetup) { goTab('settings'); }
@@ -1286,6 +1399,22 @@ function parseJsonStrict(text) {
   const e = t.lastIndexOf('}');
   if (s < 0 || e < 0 || e <= s) throw new Error('AI 返回格式异常，请重新提取');
   return JSON.parse(t.slice(s, e + 1));
+}
+
+function splitAnalysisJson(text) {
+  const t = String(text || '');
+  const k = t.indexOf('"caseType"');
+  if (k < 0) return { text: t, obj: null };
+  const s = t.lastIndexOf('{', k);
+  if (s < 0) return { text: t, obj: null };
+  const e = t.lastIndexOf('}');
+  if (e <= s) return { text: t, obj: null };
+  try {
+    const obj = JSON.parse(t.slice(s, e + 1));
+    return { text: t.slice(0, s).replace(/\n+$/, '').trim(), obj: obj };
+  } catch (err) {
+    return { text: t, obj: null };
+  }
 }
 
 function renderElemFactFields(key) {
