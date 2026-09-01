@@ -915,7 +915,8 @@ async function draftAnalyze(force) {
     if (mode === 'complaint') {
       prompt += '\n\n分析完成后，在最后单独输出一个 JSON 对象（不要 Markdown 代码块，不要额外解释），严格按此结构：\n' +
         '{"caseType":"案由名称","plaintiff":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"defendant":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"claims":["诉讼请求1","诉讼请求2"],"evidence":["证据1（名称｜来源/形式｜证明目的）"],"factFields":{"与案由相关的要素标签":"内容"},"factReason":"","court":"受理法院，未知则空"}\n' +
-        '要求：素材未提及的字段一律为空字符串或空数组，绝不编造。';
+        '要求：素材未提及的字段一律为空字符串或空数组，绝不编造。\n' +
+        'factFields 的键必须从下面与你所选案由对应的要素表中原样选取（不要改写、不要加标点、不要合并）：\n' + elemLabelSpec();
     }
     const r = await callLLM([
       { role: 'system', content: SYS },
@@ -1261,6 +1262,17 @@ const CASE_KEY_MAP = {
   '工伤保险资格或者待遇认定': 'admin', '国有土地上房屋征收决定': 'admin', '行政征收': 'admin'
 };
 
+function elemLabelSpec() {
+  const parts = [];
+  for (const k in FACT_TEMPLATES) {
+    parts.push(k + '：' + FACT_TEMPLATES[k].map(f => f.label).join('、'));
+  }
+  return parts.join('；');
+}
+function elemLabelsFor(key) {
+  return (key && FACT_TEMPLATES[key]) ? FACT_TEMPLATES[key].map(f => f.label) : [];
+}
+
 function elemKeyOf(name) {
   const n = String(name || '').trim();
   if (CASE_KEY_MAP[n]) return CASE_KEY_MAP[n];
@@ -1494,12 +1506,17 @@ function fillElemForm(obj) {
   const key = elemKeyOf(caseType);
   renderElemFactFields(key);
   const ff = obj.factFields || {};
+  const normLabel = s => String(s || '').replace(/[\s，。、；：:（）()【】\[\]\/\\·\-—]/g, '').toLowerCase();
   if (key && FACT_TEMPLATES[key]) {
     FACT_TEMPLATES[key].forEach(f => {
       let v = ff[f.key] || '';
       if (!v) {
+        const nl = normLabel(f.label);
         for (const k in ff) {
-          if (String(ff[k]) && (k.includes(f.label) || f.label.includes(k))) { v = ff[k]; break; }
+          const val = String(ff[k] || '').trim();
+          if (!val) continue;
+          const nk = normLabel(k);
+          if (nk === nl || nk.includes(nl) || nl.includes(nk)) { v = val; break; }
         }
       }
       set('eff_' + f.key, v);
@@ -1515,6 +1532,10 @@ function fillElemForm(obj) {
   if (!d.name) missing.push('被告姓名');
   if (!(obj.claims || []).length) missing.push('诉讼请求');
   if (!(obj.evidence || []).length) missing.push('证据清单');
+  if (key && FACT_TEMPLATES[key]) {
+    const emptyFacts = FACT_TEMPLATES[key].filter(f => { const el = $('eff_' + f.key); return !el || !el.value.trim(); }).length;
+    if (emptyFacts > 0) missing.push('案件要素（' + emptyFacts + ' 项待补充）');
+  }
   const mbox = $('elemMissing');
   if (missing.length) {
     mbox.style.display = '';
@@ -1547,7 +1568,13 @@ async function runExtractFill() {
     '  "factReason": "完整事实与理由段落（如 factFields 已充分可留空）",\n' +
     '  "court": "受理法院，未知则空"\n' +
     '}\n' +
-    '要求：未提及的字段一律为空字符串或空数组，绝不编造。\n素材：\n' + material;
+    '要求：未提及的字段一律为空字符串或空数组，绝不编造。\n';
+  const key = elemKeyOf($('caseTypeSel').value || currentDraft.caseType || '');
+  const labels = elemLabelsFor(key);
+  if (labels.length) {
+    prompt += 'factFields 的键必须严格使用以下名称（原样，不加标点）：' + labels.join('、') + '\n';
+  }
+  prompt += '素材：\n' + material;
   const r = await callLLM([
     { role: 'system', content: SYS },
     { role: 'user', content: prompt }
