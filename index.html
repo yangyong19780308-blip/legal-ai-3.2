@@ -3487,8 +3487,14 @@ function fillBlankRun(text, re, value) {
   });
 }
 function elemPartySide(label) {
-  const n = elemNormKey(label);
+  const raw = String(label || '').trim();
+  if (!raw) return '';
+  // 官方表的当事人行是“原告（自然人）”“被告（法人、非法人组织）”这类短标签，且不带序号；
+  // “15.被告应当支付的利息…”这类只是正文里提到当事人，不能被当成当事人信息行（否则会跳过内容映射）
+  if (/^\d/.test(raw.replace(/\s/g, ''))) return '';
+  const n = elemNormKey(raw);
   if (!n) return '';
+  if (n.length > 14) return '';
   const P = ['原告', '自诉人', '申请人', '申请执行人', '赔偿请求人', '被答辩人'];
   const D = ['被告', '被告人', '被申请人', '被执行人', '答辩人', '赔偿义务机关'];
   if (P.some(w => n.includes(w))) return 'P';
@@ -3653,6 +3659,8 @@ function elemAutoMarkBoxes(content, value) {
   const c = String(content || '');
   const v = String(value || '');
   if (!v || c.indexOf('□') < 0) return c;
+  // 当事人角色类选项（原告/被告/其他…）不自动勾选：归属到底归谁要看逐项正文，勾错反而误导
+  const roleWords = ['原告', '被告', '第三人', '申请人', '被申请人', '申请执行人', '被执行人', '赔偿请求人', '赔偿义务机关', '答辩人', '被答辩人', '甲方', '乙方', '其他'];
   let out = c;
   const re = /([\u4e00-\u9fa5A-Za-z、，/]{2,14})□/g;
   const done = {};
@@ -3660,6 +3668,7 @@ function elemAutoMarkBoxes(content, value) {
   while ((m = re.exec(c)) !== null) {
     const opt = m[1];
     if (done[opt]) continue;
+    if (roleWords.indexOf(opt) >= 0) continue;
     const at = v.indexOf(opt);
     if (at < 0) continue;
     if (v[at + opt.length] === '□') continue; // 值里也是未勾选的模板原文
@@ -3671,6 +3680,24 @@ function elemAutoMarkBoxes(content, value) {
     out = out.slice(0, boxAt) + opt + '☑' + out.slice(boxAt + opt.length + 1);
     done[opt] = 1;
   }
+  return out;
+}
+
+/* “无财产□／有财产□”“无债务□／有债务□”“无此问题□／有此问题□”这类成对选项：
+   有实质内容就勾“有…”，写明“无/没有”就勾“无…” */
+function elemMarkPairedChoice(content, value) {
+  const c = String(content || '');
+  const v = String(value || '').trim();
+  if (!c || !v) return c;
+  const neg = /^(无|没有|不存在|不主张)/.test(v);
+  let out = c;
+  [['财产', '无财产□', '有财产□'], ['债务', '无债务□', '有债务□'], ['此问题', '无此问题□', '有此问题□']].forEach(([, noBox, yesBox]) => {
+    const box = neg ? noBox : yesBox;
+    if (out.indexOf(box) < 0) return;
+    const substantive = neg || v.replace(/[\s\u00a0]/g, '').length >= 4;
+    if (!substantive) return;
+    out = out.replace(box, box.slice(0, -1) + '☑');
+  });
   return out;
 }
 
@@ -3714,6 +3741,14 @@ function elemFillSlots(content, value) {
   if (dates.length && /年\s*月\s*日/.test(out)) {
     out = out.replace(/年\s*月\s*日/, dates[0].trim());
   }
+  // “金额：”空槽（离婚损害赔偿／经济补偿／经济帮助等）
+  if (amounts.length && /金额[：:]/.test(out)) {
+    out = out.replace(/金额[：:][ \t\u00a0]*/, '金额：' + amounts[0].trim());
+  }
+  // “元（人民币，下同…）”这类前置空槽（给付价款行）：把金额放到“元”前面
+  if (amounts.length && /^[ \t\u00a0]*元/.test(out)) {
+    out = out.replace(/^[ \t\u00a0]*元/, amounts[0].trim());
+  }
   if (out === c && dates.length && /是否到期/.test(out)) {
     out = out.replace(/是否到期：\s*是□/, '是否到期：是☑');
   }
@@ -3741,15 +3776,27 @@ function elemStripPrefix(content, value) {
     i++; j++;
   }
   if (j === nc.length) return t.slice(i).replace(/^[\s\u00a0\u23ce]+/, '');
+  // 值里把左侧标签（含括号注释）也一起返回时，从模板正文出现处截断
+  const firstLine = c.split('\n')[0].trim();
+  if (firstLine) {
+    const idx = t.indexOf(firstLine);
+    if (idx > 0) {
+      const head = t.slice(0, idx).trim();
+      // 只有前面的确是“标签：”这样的抬头（如“文书类型（注：…）：”）才截断，
+      // 否则会把“86000元”这类正文前缀误删
+      if (/[：:]$/.test(head) || /[）)]$/.test(head)) return t.slice(idx);
+    }
+  }
   return t;
 }
 function elemApplyRowValue(content, value, label) {
   const c = String(content || '');
-  const v = elemStripPrefix(c, String(value || '').trim() || '').trim();
+  let v = elemStripPrefix(c, String(value || '').trim() || '').trim();
   if (!v) return c; // 复核文本只是模板原文（该行没填内容）
   const bare = s => String(s || '').replace(/[\s\u00a0]/g, '');
   const choiceLike = /^(是|否|有|无|了解|不|同意|申请|主张|一般授权|特别授权|现金|转账|正式登记|预告登记|到期一次性|按月计息|按季计息|按年计息|暂不确定)/.test(v);
-  const bareC = bare(c), bareV = bare(v);
+  const bareC = bare(c);
+  let bareV = bare(v);
   if (bareV && bareC && bareV === bareC) return c; // 与模板一致（该行没填东西）
   // 非勾选型的成段内容已在该行内时不重复叠加（“否/是”这类短勾选词除外）
   if (!choiceLike && v.length >= 4 && bareC) {
@@ -3761,8 +3808,16 @@ function elemApplyRowValue(content, value, label) {
   const n = elemNormKey(label || '');
   const hasBox = c.indexOf('□') >= 0;
   const choiceRow = hasBox && /是否|有无|了解|先行调解|授权|登记|还款方式|提供方式|类型|所有制/.test(n);
-  // AI 直接给了整行成品（含勾选框或模板原文）
-  if (/[☑]/.test(v) && v.length >= 8) return v;
+  // AI 直接给了整行成品（含勾选框且覆盖模板原文）→ 采用；否则只把它当内容，
+  // 避免模型自己写个“☑ …”就把官方模板原有栏目（无财产□／有财产□…）整行顶掉
+  if (/[☑]/.test(v) && v.length >= 8) {
+    const uniqC = Array.from(new Set(bareC.split('')));
+    const cover = uniqC.length ? uniqC.filter(ch => bareV.indexOf(ch) >= 0).length / uniqC.length : 0;
+    if (cover >= 0.6) return v;
+    v = v.replace(/^[☑✓√\s]+/, '').trim();
+    if (!v) return c;
+    bareV = bare(v);
+  }
   // 值里已经覆盖模板大部分文字（例如按模板补全了空格的整句）→ 视为整行成品，直接替换
   if (!hasBox && bareC.length >= 8) {
     const uniq = Array.from(new Set(bareC.split('')));
@@ -3771,18 +3826,23 @@ function elemApplyRowValue(content, value, label) {
   }
   let out = elemApplyChoice(c, v);
   out = elemAutoMarkBoxes(out, v);
+  out = elemMarkPairedChoice(out, v);
   if (choiceRow) return elemFillSlots(out, v);
-  if (out !== c) return out;
-  out = elemFillFromPairs(c, v);
-  if (out !== c) return out;
-  if (!c.trim()) return v;
-  out = elemFillSlots(c, v);
-  if (out !== c) return out;
-  if (hasBox || c.trim().length >= 16) {    // 模板里带勾选项/原文较长：保留模板原文，另起一行写明情况
-    return bareC.indexOf(bareV) >= 0 ? c : c + '\n' + v;
-  }
-  if (bareC.indexOf(bareV) >= 0) return c;
-  return v.length >= 12 ? v : c + v;
+  const beforeSlots = out;
+  out = elemFillFromPairs(out, v);
+  out = elemFillSlots(out, v);
+  if (!c.trim()) return out || v;
+  if (bare(out).indexOf(bareV) >= 0) return out;   // 正文已经在行内
+  // 行里已有“归属/明细/情况”等明细区，或金额类空槽已被填 → 保留模板再补正文；
+  // 纯金额/表态行（如离婚损害赔偿）只勾选+填金额，理由写在事实与理由，避免同一段话重复
+  const amountConsumed = /金额[：:]\s*\d/.test(out) && amounts(v).length > 0;
+  if (amountConsumed && beforeSlots !== c) return out;
+  if (hasBox || c.trim().length >= 16) return out + '\n' + v;
+  return v.length >= 12 ? v : out + v;
+}
+
+function amounts(s) {
+  return String(s || '').match(/[0-9][0-9,，.]*\s*(?:元|万元)/g) || [];
 }
 
 /* 素材没提到、但官方要素表仍需表态的行：按常见填写习惯补默认勾选（可在表单里改） */
@@ -3796,7 +3856,15 @@ const ELEM_ROW_DEFAULTS = [
   [/是否签订物的担保|是否最高额担保|是否办理抵押|质押登记|是否签订保证合同|其他担保方式/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '否')],
   [/担保人|担保物/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '无')],
   [/是否存在逾期还款/, (t) => (/逾期|未还|未付|欠付|拒付|违约/.test(t) ? '是' : '')],
+  [/是否存在迟延履行/, (t) => (/逾期|迟延|未付|未付款|拖欠|未按期/.test(t) ? '是' : '否')],
+  [/是否催促过履行/, (t) => (/催促|催告|催收|催要|催款|多次要求/.test(t) ? '是' : '否')],
+  [/是否对标的物的瑕疵|瑕疵承担责任/, (t) => (/质量|瑕疵|不合格|退货|换货|修理|重作|减少价款/.test(t) ? '' : '否')],
+  [/标的物有无质量争议/, (t) => (/质量争议|质量异议|质量问题|不符合约定/.test(t) ? '' : '无')],
+  [/质量规格或.*不符合约定|履行方式.*不符合约定/, (t) => (/质量异议|质量问题|不符合约定|不合格/.test(t) ? '' : '否')],
+  [/是否曾就标的物质量问题进行协商/, (t) => (/质量|瑕疵|协商/.test(t) ? '' : '否')],
+  [/是否通知解除合同/, (t) => (/解除合同|通知解除|已解除/.test(t) ? '' : '否')],
   [/其他请求$/, () => '无'],
+  [/^\d*[.．、]?\s*其他$/, () => '无'],
   [/其他需要说明的内容/, () => '无'],
   [/其他担保方式/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '否')]
 ];
@@ -3818,7 +3886,13 @@ function elemDefaultForRow(label, data) {
 /* 行标签 → 案由要素（data.facts）关键词映射，覆盖各案由通用骨架 */
 const ELEM_ROW_FACT_HINTS = [
   [/合同签订情况|签订情况|合同情况|协议情况|合同名称/, ['合同签订', '借款时间地点金额', '合同情况', '租赁合同', '签约']],
-  [/签订主体|合同主体/, []],
+  [/签订主体|合同主体|买卖双方/, []],   // 由当事人字段直接填（出卖人/买受人、出租人/承租人…）
+  /* —— 买卖合同 / 租赁等合同类案由的要素行 —— */
+  [/标的物|标的|货物|商品|品名|规格|数量|单价|总价|价款|价格|货款|付款方式|支付方式/, ['标的物数量金额', '货物情况', '标的物情况', '价款', '履行情况']],
+  [/交货|交付|供货|发货|验收|安装|调试|风险承担|运输|质量/, ['履行情况', '交付情况', '验收情况', '标的物数量金额']],
+  [/催促|催告|催收|催要|催款/, ['催告情况', '催收情况', '履行情况', '违约情况']],
+  [/违约金|定金|迟延履行|逾期/, ['被告违约情况', '违约情况', '逾期情况']],
+  [/利息|赔偿金|损失/, ['损失情况', '损失', '被告违约情况']],
   [/本金|借款金额|借款数额|欠款金额|欠费|欠款|货款|金额|标的额|数额/, ['借款时间地点金额', '标的总额', '欠款', '欠费', '金额', '货款', '租金']],
   [/借款期限|租期|期限|履行期限|交货期限/, ['还款约定', '借款期限', '租赁期限', '合同约定', '履行']],
   [/借款利率|利率|利息|违约金|滞纳金/, ['还款约定', '利息', '利率', '违约金', '逾期']],
@@ -3830,8 +3904,40 @@ const ELEM_ROW_FACT_HINTS = [
   [/仲裁|管辖|约定/, ['管辖', '仲裁']],
   [/调解|和解/, ['调解', '和解']],
   [/其他需要说明|其他需要列明|其他情况/, ['其他', '需要说明']],
+  /* —— 婚姻家庭 / 财产 / 债务 / 抚养 / 赔偿类要素行（离婚、婚约财产、共有物分割等案由的骨架） —— */
+  [/财产|房产|房屋|门面|商铺|不动产|存款|车辆|汽车|股权|股票|基金|债权|分割/, ['共同财产分割请求', '夫妻共同财产', '财产情况', '共同财产', '房屋信息', '标的物情况']],
+  [/债务|欠款|负债/, ['共同债务情况', '夫妻共同债务', '债务情况', '债务']],
+  [/抚养|子女|探望|监护/, ['子女抚养/抚养费/探望权', '子女情况', '抚养']],
+  [/赔偿|补偿|帮助|损害/, ['赔偿/补偿/帮助', '赔偿', '补偿', '损失情况', '损失']],
+  [/解除婚姻|婚姻关系解除/, []],                          // 解除婚姻关系行：用诉讼请求里的原文，不套用结婚时间等事实
+  [/婚姻|结婚|感情|分居|离婚事由/, ['结婚时间地点', '夫妻感情破裂原因', '分居情况', '婚姻关系']],
   [/事实经过|事实与理由|纠纷发生|事情经过/, ['事实', '经过', '情况']]
 ];
+
+/* 案由要素对不上时，从"诉讼请求"里取对应那一项（传统诉状的请求项通常写得很完整） */
+function elemRowValueFromClaims(label, data) {
+  const claims = (data.claims || []).map(s => String(s || '').trim()).filter(Boolean);
+  const n = elemNormKey(label);
+  if (!n || !claims.length) return '';
+  const groups = [
+    [/财产|房产|房屋|门面|商铺|不动产|存款|车辆|汽车|股权|股票|基金|分割/, ['财产', '房产', '房屋', '门面', '商铺', '存款', '车辆', '股权', '分割', '共有']],
+    [/债务|欠款|负债/, ['债务', '欠款', '借款']],
+    [/抚养|子女|探望/, ['抚养', '探望', '子女']],
+    [/赔偿|补偿|帮助|损害/, ['赔偿', '补偿', '帮助', '损害']],
+    [/解除婚姻|婚姻关系/, ['解除婚姻关系', '解除', '婚姻']],
+    [/违约金|定金/, ['违约金', '定金']],
+    [/利息|损失|赔偿/, ['利息', '损失', '赔偿']],
+    [/继续履行|解除合同/, ['继续履行', '解除合同']],
+    [/标的物|标的|货物|交货|交付|验收|价款|货款|付款|支付/, ['货款', '价款', '货物', '交付', '验收', '支付']],
+    [/诉讼费用|诉讼费/, ['诉讼费', '诉讼费用']]
+  ];
+  for (const [re, keys] of groups) {
+    if (!re.test(n)) continue;
+    const hit = claims.find(c => keys.some(k => c.indexOf(k) >= 0));
+    if (hit) return hit;
+  }
+  return '';
+}
 
 function elemRowValueFromFacts(label, data) {
   const facts = (data.facts || []).filter(f => f && String(f.content || '').trim());
@@ -3873,7 +3979,7 @@ function fillLayoutContent(label, content, data, elements) {
     const v = String(total.content || '').trim();
     if (v) { t = v; ownFilled = true; }
   }
-  if (n.includes('请求依据') || n.includes('答辩依据')) {
+  if (n.includes('依据')) {   // 请求依据／答辩依据／请求承担责任的依据…都用同一处法律依据
     if (basis) {
       const v = String(basis.content || '').trim();
       if (v) { t = t.replace(/(法律规定：)\s*/, '$1' + v); ownFilled = true; }
@@ -3885,20 +3991,25 @@ function fillLayoutContent(label, content, data, elements) {
     ownFilled = true;
   }
   if (n.includes('签订主体')) {
-    t = t.replace(/(出借人：)\s*/, '$1' + (pl.name || ''));
-    t = t.replace(/(借款人：)\s*/, '$1' + (df.name || ''));
-    t = t.replace(/(出租人：)\s*/, '$1' + (pl.name || ''));
-    t = t.replace(/(承租人：)\s*/, '$1' + (df.name || ''));
-    t = t.replace(/(出卖人：)\s*/, '$1' + (pl.name || ''));
-    t = t.replace(/(买受人：)\s*/, '$1' + (df.name || ''));
-    t = t.replace(/(发包人：)\s*/, '$1' + (pl.name || ''));
-    t = t.replace(/(承包人：)\s*/, '$1' + (df.name || ''));
     ownFilled = !!(pl.name || df.name);
+  }
+  if (n.includes('签订主体') || n.includes('合同主体')) {
+    // 官方各行叫法不一：出卖人（卖方）/买受人（买方）、出租人/承租人、出借人/借款人…
+    ['出卖人（卖方）', '出卖人', '卖方', '出租人', '出借人', '发包人', '甲方', '委托人'].forEach(lab => {
+      t = fillCellAfter(t, lab, pl.name || '');
+    });
+    ['买受人（买方）', '买受人', '买方', '承租人', '借款人', '承包人', '乙方', '受托人'].forEach(lab => {
+      t = fillCellAfter(t, lab, df.name || '');
+    });
+    ownFilled = ownFilled || !!(pl.name || df.name);
   }
   // ① 官方要素行内容（AI 提取 / 表单填写）② 案由要素按行关键词兜底 ③ 未提及行的常规默认勾选
   const elemVal = elemElementValue(label, elements);
   const factVal = elemVal ? '' : elemRowValueFromFacts(label, data);
-  const value = elemVal || factVal;
+  const claimsVal = (elemVal || factVal) ? '' : elemRowValueFromClaims(label, data);
+  let value = elemVal || factVal || claimsVal;
+  // “是否催促过履行”行：素材里没有“催”的事实就不要把交货日期等塞进催促时间
+  if (value && /催促|催告/.test(n) && !/催/.test(value)) value = '';
   if (value && !ownFilled) {
     const applied = elemApplyRowValue(t, value, label);
     if (applied && applied.trim() !== t.trim()) t = applied;
@@ -3915,6 +4026,9 @@ function fillLayoutContent(label, content, data, elements) {
     if (/实际清偿之日|清偿之日|付清之日|实际给付之日/.test(all)) {
       t = t.replace(/是否请求支付至实际清偿之日止：\s*是□/, '是否请求支付至实际清偿之日止：是☑');
     }
+  }
+  if (typeof process !== 'undefined' && process.env && process.env.DBG_ROW) {
+    console.log('[dbg] ' + label.replace(/\n/g, '') + ' | value=' + String(value).slice(0, 30) + ' | own=' + ownFilled + ' | t=' + String(t).replace(/\n/g, '/').slice(0, 70));
   }
   return t;
 }
@@ -4001,7 +4115,15 @@ function officialRowsTextFromDoc(data) {
 function parseOfficialRowsText(text) {
   const elements = {};
   String(text || '').split('\n').forEach(line => {
-    const i = line.indexOf('：');
+    // 标签里可能自带“：”（如“文书类型（注：1.行政处罚决定…）”），只在括号外的第一个冒号处切分
+    let depth = 0;
+    let i = -1;
+    for (let k = 0; k < line.length; k++) {
+      const ch = line[k];
+      if ('（(【['.indexOf(ch) >= 0) depth++;
+      else if ('）)】]'.indexOf(ch) >= 0) depth = Math.max(0, depth - 1);
+      else if ((ch === '：' || ch === ':') && depth === 0) { i = k; break; }
+    }
     if (i <= 0) return;
     const label = line.slice(0, i).trim();
     const value = line.slice(i + 1).replace(/\s*⏎\s*/g, '\n').trim();
