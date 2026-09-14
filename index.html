@@ -2435,17 +2435,19 @@ function exportBothDocs() {
   if (currentDraft.docs.length < 2) {
     const d = currentDraft.docs[0];
     const fname = docFileName(d, stamp);
-    if (d.html) exportHtmlDoc(fname + '.doc', d.html, docFileName(d, ''));
-    else exportTextDoc(fname + '.doc', d.text, docFileName(d, ''));
+    const t0 = docFileName(d, '').replace(/_/g, '·');
+    if (d.html) exportHtmlDoc(fname + '.doc', d.html, t0);
+    else exportTextDoc(fname + '.doc', d.text, t0);
     toast('已导出 Word');
     return;
   }
   const [elem, trad] = currentDraft.docs;
-  if (elem.html) exportHtmlDoc(docFileName(elem, stamp) + '.doc', elem.html, docFileName(elem, ''));
-  else exportTextDoc(docFileName(elem, stamp) + '.doc', elem.text, docFileName(elem, ''));
+  const titleOf = d => docFileName(d, '').replace(/_/g, '·');
+  if (elem.html) exportHtmlDoc(docFileName(elem, stamp) + '.doc', elem.html, titleOf(elem));
+  else exportTextDoc(docFileName(elem, stamp) + '.doc', elem.text, titleOf(elem));
   setTimeout(() => {
-    if (trad && trad.html) exportHtmlDoc(docFileName(trad, stamp) + '.doc', trad.html, docFileName(trad, ''));
-    else exportTextDoc(docFileName(trad, stamp) + '.doc', trad ? trad.text : '', docFileName(trad, ''));
+    if (trad && trad.html) exportHtmlDoc(docFileName(trad, stamp) + '.doc', trad.html, titleOf(trad));
+    else exportTextDoc(docFileName(trad, stamp) + '.doc', trad ? trad.text : '', titleOf(trad));
   }, 400);
   toast('已导出两份 Word');
 }
@@ -4328,18 +4330,32 @@ function flowNoteText(text) {
 }
 function layoutRowsToHtml(title, rows, data) {
   const tp = splitOfficialTitle(title);
-  let h = '<div class="elem-official-wrap"><div class="elem-official-title">' + escBr(tp[0]) + (tp[1] ? '<br><span class="elem-official-sub">' + escBr(tp[1]) + '</span>' : '') + '</div><table class="elem-official"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
+  // 内联样式：Word 打开 .doc 时对类选择器支持不稳，大项"放大+居中"必须写进单元格本身
+  const TD = 'border:0.5pt solid #000;padding:2px 4px;vertical-align:top;font-size:10.5pt;font-family:仿宋,FangSong,SimSun,serif;';
+  const SEC_STYLE = 'border:0.5pt solid #000;padding:4px;text-align:center;font-size:15pt;font-weight:400;font-family:方正小标宋_GBK,宋体,SimSun,serif;';
+  let h = '<div class="elem-official-wrap"><div class="elem-official-title" style="text-align:center;font-size:22pt;font-weight:700;font-family:方正大标宋_GBK,宋体,SimSun,serif;">'
+    + escBr(tp[0])
+    + (tp[1] ? '<br><span class="elem-official-sub" style="display:inline-block;font-size:16pt;font-weight:400;font-family:方正小标宋_GBK,宋体,SimSun,serif;">' + escBr(tp[1]) + '</span>' : '')
+    + '</div><table class="elem-official"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
   let signParts = [];
   for (const r of rows) {
     const k = r[0];
     if (k === 's') {
       const text = r[1] || '';
       const n = elemNormKey(text);
-      const cls = isLayoutCategoryHeader(text) ? 'sec-ct' : (n.includes('说明') || text.indexOf('★') >= 0 ? 'note' : (n.includes('可完整表述') ? 'note2' : ''));
-      const body = cls === 'note' ? flowNoteText(text) : escBr(text);
-      h += '<tr class="sec-full ' + cls + '"><td colspan="2">' + body + '</td></tr>';
+      const isNote = n.includes('说明') || text.indexOf('★') >= 0;
+      const isNote2 = /可完整表述|可概括描述/.test(n);
+      // 大项判定放宽：官方各类大项（当事人信息、诉讼请求、答辩事项、执行依据信息…）都是短整行，
+      // 除说明区和"可完整表述…"提示外，20 字以内的整行按大项处理
+      const isSection = !isNote && !isNote2
+        && (isLayoutCategoryHeader(text) || (text.replace(/\s/g, '').length <= 20 && !/[。；;]/.test(text)));
+      const cls = isNote ? 'note' : (isNote2 ? 'note2' : (isSection ? 'sec-ct' : ''));
+      const body = isNote ? flowNoteText(text) : escBr(text);
+      const style = isSection ? SEC_STYLE : (isNote ? (TD + 'text-align:justify;') : TD);
+      h += '<tr class="sec-full ' + cls + '"><td colspan="2" style="' + style + '">' + body + '</td></tr>';
     } else if (k === 'r') {
-      h += '<tr><td class="lab">' + escBr(r[1]) + '</td><td class="val">' + escBr(r[2] || '') + '</td></tr>';
+      h += '<tr><td class="lab" style="' + TD + 'text-align:center;vertical-align:middle;">' + escBr(r[1]) + '</td>'
+        + '<td class="val" style="' + TD + 'vertical-align:top;line-height:1.6;">' + escBr(r[2] || '') + '</td></tr>';
     } else if (k === 'sign') {
       signParts.push(r[1] || '');
     }
@@ -4349,7 +4365,9 @@ function layoutRowsToHtml(title, rows, data) {
     const sn = (data.signerName || '').trim();
     const sd = (data.signDate || '').trim();
     const signLabel = String(signParts[0] || '').replace(/[：:]\s*$/, '').trim() || '具状人（签字、盖章）';
-    h += '<div class="elem-sign"><div class="elem-sign-item">' + escHtml(signLabel) + '：' + escHtml(sn) + '</div><div class="elem-sign-item">日期：' + escHtml(sd) + '</div></div>';
+    h += '<div class="elem-sign" style="padding:12px 4px 4px;font-size:15pt;line-height:1.8;text-align:left;font-family:方正小标宋_GBK,仿宋,FangSong,SimSun,serif;">'
+      + '<div class="elem-sign-item">' + escHtml(signLabel) + '：' + escHtml(sn) + '</div>'
+      + '<div class="elem-sign-item">日期：' + escHtml(sd) + '</div></div>';
   }
   h += '</div>';
   return h;
