@@ -609,6 +609,48 @@ let currentDraft = { mode: 'complaint', caseType: '', material: '', analysis: ''
 let caseSearchText = '';
 let curDocText = '';
 let curDocHtml = null;
+let curDocName = '';
+
+/* ============ 文书命名：带上当事人称谓与案由（不再只是“法务文书”） ============ */
+function docNaming() {
+  const mode = (currentDraft && currentDraft.mode) || 'complaint';
+  let data = (currentDraft && currentDraft.lastData) || null;
+  if (!data) { try { data = readElemForm(); } catch (e) { data = null; } }
+  const p = (data && data.plaintiff) || {};
+  const d = (data && data.defendant) || {};
+  const caseType = String((data && data.caseType) || (currentDraft && currentDraft.caseType) || '').trim();
+  let dt = '';
+  try { dt = (typeof docTypeForMode === 'function') ? docTypeForMode(mode, caseType) : ''; } catch (e) { dt = ''; }
+  let role = '原告';
+  let name = p.name || '';
+  if (mode === 'answer' || dt === 'answer') { role = '答辩人'; name = d.name || p.name || ''; }
+  else if (mode === 'exec' || dt === 'exec') { role = '申请执行人'; name = p.name || ''; }
+  else if (dt === 'compensation') { role = '赔偿请求人'; name = p.name || ''; }
+  return { mode: mode, caseType: caseType, role: role, name: String(name || '').trim(), docType: dt };
+}
+
+/* 生成文件名：<文书名>（<案由>）_<称谓><姓名>_<日期>.doc */
+function docFileName(doc, stamp) {
+  const info = docNaming();
+  let base = String((doc && doc.name) || '法律文书').replace(/（官方模板）|（申请执行用）|（要素式）|（传统式）/g, '');
+  base = base.replace(/\s+/g, '');
+  const skipCaseType = (info.docType === 'exec' && /申请书/.test(base));
+  if (info.caseType && !skipCaseType && base.indexOf(info.caseType) < 0) {
+    base = base.replace(/（[^）]*）\s*$/, '') + '（' + info.caseType + '）';
+  }
+  const who = info.name ? ('_' + info.role + info.name) : (info.role ? '' : '');
+  const out = base + who + (stamp ? '_' + stamp : '');
+  return out.replace(/[\\/:*?"<>|]/g, '_');
+}
+
+/* 文书标题（写进 Word 文档属性/打印标题，与文件名同源） */
+function docTitleText() {
+  const info = docNaming();
+  const base = String(curDocName || '').replace(/_\d{8}$/, '');
+  if (base) return base.replace(/_/g, '·');
+  const who = info.name ? (info.role + info.name) : info.role;
+  return (info.caseType ? info.caseType + '·' : '') + who + ' 法律文书';
+}
 
 function loadState() {
   try {
@@ -1436,6 +1478,7 @@ function renderDraftDocs(docs) {
       curDocText = d.text;
       curDocHtml = null;
     }
+    curDocName = docFileName(d, '');
     $('selfCheckArea').innerHTML = '';
   };
   docs.forEach((d, i) => {
@@ -1507,13 +1550,16 @@ function tradTextToHtml(text) {
 function exportDoc() {
   const text = curDocText || $('docBody').textContent;
   if (!text && !curDocHtml) { toast('没有可导出的内容'); return; }
+  const stamp = today().replace(/[年月日]/g, '');
+  const base = curDocName || docFileName({ name: '法律文书' }, '');
+  const title = docTitleText();
   const html = curDocHtml
-    ? wordHtmlShell(curDocHtml)
-    : "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>法务文书</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
+    ? wordHtmlShell(curDocHtml, title)
+    : "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>" + escHtml(title) + "</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
   const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = '法务文书_' + today().replace(/[年月日]/g, '') + '.doc';
+  a.download = base.replace(/_\d{8}$/, '') + '_' + stamp + '.doc';
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -1524,9 +1570,10 @@ function printDoc() {
   if (!text && !curDocHtml) { toast('没有可打印的内容'); return; }
   const w = window.open('', '_blank');
   if (!w) { toast('浏览器拦截了打印窗口，请允许弹窗'); return; }
+  const title = docTitleText();
   w.document.write(curDocHtml
-    ? "<html><head><meta charset='utf-8'><title>法务文书</title><style>body{font-family:仿宋,SimSun;font-size:16px;line-height:1.8;padding:30px;}table.elem-official{width:100%;border-collapse:collapse;}table.elem-official th,table.elem-official td{border:1px solid #000;padding:5px 8px;vertical-align:top;text-align:left;font-size:14px;}table.elem-official th{text-align:center;}</style></head><body>" + curDocHtml + "<script>window.onload=function(){window.print();}<\/script></body></html>"
-    : "<html><head><meta charset='utf-8'><title>法务文书</title><style>body{font-family:仿宋,SimSun;font-size:16px;line-height:2;padding:40px;}pre{white-space:pre-wrap;font-family:仿宋,SimSun;}</style></head><body><pre>" + escHtml(text) + "</pre><script>window.onload=function(){window.print();}<\/script></body></html>");
+    ? "<html><head><meta charset='utf-8'><title>" + escHtml(title) + "</title><style>body{font-family:仿宋,SimSun;font-size:16px;line-height:1.8;padding:30px;}table.elem-official{width:100%;border-collapse:collapse;}table.elem-official th,table.elem-official td{border:1px solid #000;padding:5px 8px;vertical-align:top;text-align:left;font-size:14px;}table.elem-official tr.sec-full.sec-ct td{font-size:15pt;}table.elem-official th{text-align:center;}</style></head><body>" + curDocHtml + "<script>window.onload=function(){window.print();}<\/script></body></html>"
+    : "<html><head><meta charset='utf-8'><title>" + escHtml(title) + "</title><style>body{font-family:仿宋,SimSun;font-size:16px;line-height:2;padding:40px;}pre{white-space:pre-wrap;font-family:仿宋,SimSun;}</style></head><body><pre>" + escHtml(text) + "</pre><script>window.onload=function(){window.print();}<\/script></body></html>");
   w.document.close();
 }
 async function selfCheck() {
@@ -2334,8 +2381,8 @@ async function genOfficialElemDoc() {
   }
 }
 
-function exportTextDoc(fileName, text) {
-  const html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>法务文书</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
+function exportTextDoc(fileName, text, title) {
+  const html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>" + escHtml(title || fileName || '法律文书') + "</title></head><body style='font-family:仿宋,SimSun;font-size:16px;line-height:2;'><pre style='white-space:pre-wrap;font-family:仿宋,SimSun;font-size:16px;line-height:2;'>" + escHtml(text) + "</pre></body></html>";
   const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2345,7 +2392,7 @@ function exportTextDoc(fileName, text) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 
-function wordHtmlShell(inner) {
+function wordHtmlShell(inner, title) {
   const css = "@page{size:A4;margin:1.5cm 2.5cm 1.8cm 2cm;}"
     + "body{font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;line-height:1.5;}"
     + "table.elem-official{width:100%;border-collapse:collapse;font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;table-layout:fixed;}"
@@ -2369,11 +2416,11 @@ function wordHtmlShell(inner) {
     + ".trad-p{text-indent:2em;line-height:1.8;margin:0 0 4px;font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;}"
     + ".trad-sec{font-weight:700;}"
     + ".trad-right{text-align:right;line-height:1.8;margin:0;padding-right:2em;font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;}";
-  return "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>法务文书</title><style>" + css + "</style></head><body>" + inner + "</body></html>";
+  return "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>" + escHtml(title || '法律文书') + "</title><style>" + css + "</style></head><body>" + inner + "</body></html>";
 }
 
-function exportHtmlDoc(fileName, inner) {
-  const blob = new Blob(['\ufeff' + wordHtmlShell(inner)], { type: 'application/msword' });
+function exportHtmlDoc(fileName, inner, title) {
+  const blob = new Blob(['\ufeff' + wordHtmlShell(inner, title || fileName)], { type: 'application/msword' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = fileName;
@@ -2387,18 +2434,18 @@ function exportBothDocs() {
   if (!currentDraft.docs || !currentDraft.docs.length) { toast('请先生成文书'); return; }
   if (currentDraft.docs.length < 2) {
     const d = currentDraft.docs[0];
-    const fname = (d.name || '法务文书').replace(/[\\/:*?"<>|]/g, '_') + '_' + stamp;
-    if (d.html) exportHtmlDoc(fname + '.doc', d.html);
-    else exportTextDoc(fname + '.doc', d.text);
+    const fname = docFileName(d, stamp);
+    if (d.html) exportHtmlDoc(fname + '.doc', d.html, docFileName(d, ''));
+    else exportTextDoc(fname + '.doc', d.text, docFileName(d, ''));
     toast('已导出 Word');
     return;
   }
   const [elem, trad] = currentDraft.docs;
-  if (elem.html) exportHtmlDoc('要素式起诉状_官方模板_' + stamp + '.doc', elem.html);
-  else exportTextDoc('要素式起诉状_' + stamp + '.doc', elem.text);
+  if (elem.html) exportHtmlDoc(docFileName(elem, stamp) + '.doc', elem.html, docFileName(elem, ''));
+  else exportTextDoc(docFileName(elem, stamp) + '.doc', elem.text, docFileName(elem, ''));
   setTimeout(() => {
-    if (trad && trad.html) exportHtmlDoc('传统式起诉状_' + stamp + '.doc', trad.html);
-    else exportTextDoc('传统式起诉状_' + stamp + '.doc', trad ? trad.text : '');
+    if (trad && trad.html) exportHtmlDoc(docFileName(trad, stamp) + '.doc', trad.html, docFileName(trad, ''));
+    else exportTextDoc(docFileName(trad, stamp) + '.doc', trad ? trad.text : '', docFileName(trad, ''));
   }, 400);
   toast('已导出两份 Word');
 }
@@ -3466,8 +3513,24 @@ function markNamedBox(text, keyword) {
   if (!k) return text;
   const t = String(text);
   const i = t.indexOf(k + '□');
-  if (i < 0) return t;
-  return t.slice(0, i) + k + '☑' + t.slice(i + k.length + 1);
+  if (i >= 0) return t.slice(0, i) + k + '☑' + t.slice(i + k.length + 1);
+  const j = t.indexOf('□' + k);
+  if (j >= 0) return t.slice(0, j) + '☑' + k + t.slice(j + 1 + k.length);
+  return t;
+}
+
+/* 官方模板有两种勾选写法：“是□”（框在后）与“□是”（框在前，行政类模板多见），两种都要认 */
+const ELEM_BOX_CHARS = '\u25a1\u2610';   // □ ☐
+function elemMarkOptionBox(content, opt) {
+  const c = String(content || '');
+  const o = String(opt || '').trim();
+  if (!c || !o) return c;
+  const esc = o.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reAfter = new RegExp(esc + '[' + ELEM_BOX_CHARS + ']');
+  if (reAfter.test(c)) return c.replace(reAfter, o + '☑');
+  const reBefore = new RegExp('[' + ELEM_BOX_CHARS + ']' + esc);
+  if (reBefore.test(c)) return c.replace(reBefore, '☑' + o);
+  return c;
 }
 function fillBirthCell(text, birth) {
   if (!birth) return text;
@@ -3644,11 +3707,17 @@ function elemApplyChoice(content, value) {
     if (next === '□') continue;                       // 模板原文里的未选框，不算选中
     if (prev === '不' && opt.length <= 2 && opt !== '不') continue; // 不主张/不同意/不了解
     if (notBefore[opt] && prev === notBefore[opt]) continue;        // 是否/有无/是否了解
-    const boxAt = marked.indexOf(opt + '□');
-    if (boxAt >= 0) {
-      marked = marked.slice(0, boxAt) + opt + '☑' + marked.slice(boxAt + opt.length + 1);
-      break;
-    }
+    const next2 = elemMarkOptionBox(marked, opt);
+    if (next2 !== marked) { marked = next2; break; }
+  }
+  // 值里说的是“是/否”，而模板用的是“有/无”（或反之）时，按极性勾对应的框
+  if (marked === c) {
+    const pos = /^(是|有|同意|了解|已|主张|申请|存在)/.test(v);
+    const neg = /^(否|无|不|未|没有|不存在)/.test(v);
+    const posWords = ['是', '有', '同意', '了解', '已', '主张', '申请', '存在'];
+    const negWords = ['否', '无', '不了解', '不同意', '未', '不存在', '没有'];
+    if (pos) for (const w of posWords) { const n2 = elemMarkOptionBox(marked, w); if (n2 !== marked) { marked = n2; break; } }
+    if (neg && marked === c) for (const w of negWords) { const n2 = elemMarkOptionBox(marked, w); if (n2 !== marked) { marked = n2; break; } }
   }
   return marked;
 }
@@ -3673,12 +3742,13 @@ function elemAutoMarkBoxes(content, value) {
     if (at < 0) continue;
     if (v[at + opt.length] === '□') continue; // 值里也是未勾选的模板原文
     const boxAt = out.indexOf(opt + '□');
-    if (boxAt < 0) continue;
-    // 命中位置若紧跟在汉字后面，说明它是更长选项的后缀（如“判决书”落在“刑事附带民事判决书□”里）→ 跳过
-    const prev = out[boxAt - 1] || '';
-    if (/[\u4e00-\u9fa5]/.test(prev)) continue;
-    out = out.slice(0, boxAt) + opt + '☑' + out.slice(boxAt + opt.length + 1);
-    done[opt] = 1;
+    if (boxAt >= 0) {
+      // 命中位置若紧跟在汉字后面，说明它是更长选项的后缀（如“判决书”落在“刑事附带民事判决书□”里）→ 跳过
+      const prev = out[boxAt - 1] || '';
+      if (/[\u4e00-\u9fa5]/.test(prev)) continue;
+    }
+    const next2 = elemMarkOptionBox(out, opt);
+    if (next2 !== out) { out = next2; done[opt] = 1; }
   }
   return out;
 }
@@ -3693,10 +3763,11 @@ function elemMarkPairedChoice(content, value) {
   let out = c;
   [['财产', '无财产□', '有财产□'], ['债务', '无债务□', '有债务□'], ['此问题', '无此问题□', '有此问题□']].forEach(([, noBox, yesBox]) => {
     const box = neg ? noBox : yesBox;
-    if (out.indexOf(box) < 0) return;
+    const word = box.slice(0, -1);
+    if (out.indexOf(box) < 0 && out.indexOf('□' + word) < 0) return;
     const substantive = neg || v.replace(/[\s\u00a0]/g, '').length >= 4;
     if (!substantive) return;
-    out = out.replace(box, box.slice(0, -1) + '☑');
+    out = elemMarkOptionBox(out, word);
   });
   return out;
 }
@@ -3827,7 +3898,13 @@ function elemApplyRowValue(content, value, label) {
   let out = elemApplyChoice(c, v);
   out = elemAutoMarkBoxes(out, v);
   out = elemMarkPairedChoice(out, v);
-  if (choiceRow) return elemFillSlots(out, v);
+  if (choiceRow) {
+    const filled = elemFillSlots(out, v);
+    if (filled !== c || filled !== out) return filled;
+    // 选项行但素材给的是一段叙述（如还款方式、迟延情形）→ 保留官方选项，另起一行写明
+    const isPolarityRow = /^(是否|有无)/.test(n.replace(/^\d+[.．、]?/, ''));
+    return (!isPolarityRow && v.replace(/[☑]/g, '').length >= 6) ? out + '\n' + v : out;
+  }
   const beforeSlots = out;
   out = elemFillFromPairs(out, v);
   out = elemFillSlots(out, v);
@@ -3845,28 +3922,24 @@ function amounts(s) {
   return String(s || '').match(/[0-9][0-9,，.]*\s*(?:元|万元)/g) || [];
 }
 
-/* 素材没提到、但官方要素表仍需表态的行：按常见填写习惯补默认勾选（可在表单里改） */
+/* 表态类行只在"素材里能确认"时才勾选：确认不了就留空，由当事人自己勾。
+   这些规则不接受"没提到就默认否/无"的猜测。 */
 const ELEM_ROW_DEFAULTS = [
-  [/是否要求提前还款|提前还款/, (t) => (/提前还款|加速到期|解除合同/.test(t) ? '' : '否')],
-  [/是否主张担保权利/, (t) => (/担保|抵押|质押|保证|优先受偿/.test(t) ? '' : '否')],
-  [/是否主张实现债权的费用/, (t) => (/律师费|实现债权的费用|保全费|公告费/.test(t) ? '是' : '否')],
-  [/是否主张诉讼费用/, (t) => (/诉讼费|案件受理费/.test(t) ? '是' : '否')],
-  [/有无仲裁|法院管辖约定/, (t) => (/仲裁|管辖约定|协议管辖|约定管辖/.test(t) ? '' : '无')],
-  [/是否已经诉前保全/, (t) => (/诉前保全|财产保全|保全/.test(t) ? '' : '否')],
-  [/是否签订物的担保|是否最高额担保|是否办理抵押|质押登记|是否签订保证合同|其他担保方式/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '否')],
-  [/担保人|担保物/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '无')],
+  // 素材明确提到 → 勾"是/有"；没提到 → 不动（留空）
+  [/是否要求提前还款|提前还款/, (t) => (/提前还款|加速到期|解除合同/.test(t) ? '是' : '')],
+  [/是否主张担保权利/, (t) => (/担保|抵押|质押|保证|优先受偿/.test(t) ? '是' : '')],
+  [/是否主张实现债权的费用/, (t) => (/律师费|实现债权的费用|保全费|公告费/.test(t) ? '是' : '')],
+  [/是否主张诉讼费用/, (t) => (/诉讼费|案件受理费/.test(t) ? '是' : '')],
+  [/有无仲裁|法院管辖约定/, (t) => (/仲裁|管辖约定|协议管辖|约定管辖/.test(t) ? '有' : '')],
+  [/是否已经诉前保全/, (t) => (/诉前保全|财产保全|保全/.test(t) ? '是' : '')],
+  [/是否签订物的担保|是否最高额担保|是否办理抵押|质押登记|是否签订保证合同|其他担保方式/, (t) => (/担保|抵押|质押|保证/.test(t) ? '是' : '')],
+  [/担保人|担保物/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '')],
   [/是否存在逾期还款/, (t) => (/逾期|未还|未付|欠付|拒付|违约/.test(t) ? '是' : '')],
-  [/是否存在迟延履行/, (t) => (/逾期|迟延|未付|未付款|拖欠|未按期/.test(t) ? '是' : '否')],
-  [/是否催促过履行/, (t) => (/催促|催告|催收|催要|催款|多次要求/.test(t) ? '是' : '否')],
-  [/是否对标的物的瑕疵|瑕疵承担责任/, (t) => (/质量|瑕疵|不合格|退货|换货|修理|重作|减少价款/.test(t) ? '' : '否')],
-  [/标的物有无质量争议/, (t) => (/质量争议|质量异议|质量问题|不符合约定/.test(t) ? '' : '无')],
-  [/质量规格或.*不符合约定|履行方式.*不符合约定/, (t) => (/质量异议|质量问题|不符合约定|不合格/.test(t) ? '' : '否')],
-  [/是否曾就标的物质量问题进行协商/, (t) => (/质量|瑕疵|协商/.test(t) ? '' : '否')],
-  [/是否通知解除合同/, (t) => (/解除合同|通知解除|已解除/.test(t) ? '' : '否')],
-  [/其他请求$/, () => '无'],
-  [/^\d*[.．、]?\s*其他$/, () => '无'],
-  [/其他需要说明的内容/, () => '无'],
-  [/其他担保方式/, (t) => (/担保|抵押|质押|保证/.test(t) ? '' : '否')]
+  [/是否存在迟延履行/, (t) => (/逾期|迟延|未付|未付款|拖欠|未按期/.test(t) ? '是' : '')],
+  [/是否催促过履行/, (t) => (/催促|催告|催收|催要|催款|多次要求/.test(t) ? '是' : '')],
+  [/其他请求$/, () => ''],
+  [/^\d*[.．、]?\s*其他$/, () => ''],
+  [/其他需要说明的内容/, () => '']
 ];
 
 function elemDefaultForRow(label, data) {
@@ -3939,6 +4012,61 @@ function elemRowValueFromClaims(label, data) {
   return '';
 }
 
+/* —— 通用兜底：按行标题里的关键词，去案由要素/诉讼请求里找最相关的一条 ——
+   各案由官方要素行叫法差异很大（医疗费、护理费、物业费、工程款、停止侵权…），
+   逐个枚举不现实；这里用"行标题关键词 × 要素/请求文本"打分匹配，覆盖所有案由。 */
+const ELEM_STOP_WORDS = ['是否', '有无', '情况', '相关', '内容', '其他', '以及', '或者', '包括', '列明', '填写',
+  '主张', '请求', '本案', '事实', '理由', '具体', '上述', '怎么', '如何', '什么', '注明', '写明', '以下'];
+
+function elemKeywords(label) {
+  // 官方有些行标题是逐字加空格的（“合 同 的 签 订 情 况”），先合并汉字之间的空格
+  let s = String(label || '').replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1');
+  s = s.replace(/^\s*\d+[.．、]?\s*/, '');
+  s = s.replace(/[（(][^）)]*[）)]/g, ' ');
+  const parts = s.split(/[\s、，,。；;：:\/]+/).filter(Boolean);
+  const out = [];
+  parts.forEach(p => {
+    if (p.length >= 2 && ELEM_STOP_WORDS.indexOf(p) < 0) out.push(p);
+    if (p.length >= 5) {
+      for (let i = 0; i + 3 <= p.length; i += 2) {
+        const w = p.slice(i, i + 3);
+        if (ELEM_STOP_WORDS.indexOf(w) < 0) out.push(w);
+      }
+    }
+  });
+  return out.filter((w, i) => out.indexOf(w) === i && w.length >= 2);
+}
+
+function elemRowValueGeneric(label, data) {
+  const keys = elemKeywords(label);
+  if (!keys.length) return '';
+  const pool = [];
+  (data.facts || []).forEach(f => {
+    const text = String(f.content || '').trim();
+    if (text) pool.push({ lab: String(f.label || ''), text: text });
+  });
+  (data.claims || []).forEach(c => {
+    const text = String(c || '').trim();
+    if (text) pool.push({ lab: '', text: text });
+  });
+  (data.evidence || []).forEach(e => {
+    const text = typeof e === 'string' ? e : (e && e.name) || '';
+    if (text) pool.push({ lab: '', text: String(text), weak: true });
+  });
+  let best = null;
+  pool.forEach(it => {
+    const hay = it.lab + ' ' + it.text;
+    let score = 0;
+    keys.forEach(k => { if (hay.indexOf(k) >= 0) score += k.length * (it.weak ? 0.5 : 1); });
+    if (score > 0 && (!best || score > best.score)) best = { score: score, text: it.text };
+  });
+  // 行标题本身很短、只有一两个专有名词（本金、医疗费、物业费、理赔款…）时，命中一个即可；
+  // 长标题要求至少两个词命中，避免误扣
+  const need = keys.length <= 2 ? 2 : 4;
+  if (best && best.score >= need) return best.text;
+  return '';
+}
+
 function elemRowValueFromFacts(label, data) {
   const facts = (data.facts || []).filter(f => f && String(f.content || '').trim());
   const n = elemNormKey(label);
@@ -4007,7 +4135,8 @@ function fillLayoutContent(label, content, data, elements) {
   const elemVal = elemElementValue(label, elements);
   const factVal = elemVal ? '' : elemRowValueFromFacts(label, data);
   const claimsVal = (elemVal || factVal) ? '' : elemRowValueFromClaims(label, data);
-  let value = elemVal || factVal || claimsVal;
+  const genericVal = (elemVal || factVal || claimsVal) ? '' : elemRowValueGeneric(label, data);
+  let value = elemVal || factVal || claimsVal || genericVal;
   // “是否催促过履行”行：素材里没有“催”的事实就不要把交货日期等塞进催促时间
   if (value && /催促|催告/.test(n) && !/催/.test(value)) value = '';
   if (value && !ownFilled) {
@@ -4020,6 +4149,8 @@ function fillLayoutContent(label, content, data, elements) {
     if (applied && applied.trim() !== t.trim()) t = applied;
     else if (!t.trim()) t = def;
   }
+  // 说明：表态类行（是否…/有无…）不再做"没提到就默认否/无"的猜测——
+  // 素材里能确认的才勾选，确认不了的保持空白，由当事人自己勾。
   // 利息行：请求支付至实际清偿之日止的勾选
   if (/利息/.test(n) && /是否请求支付至实际清偿之日止/.test(t)) {
     const all = [(data.claims || []).join(' '), (data.facts || []).map(f => f.content || '').join(' ')].join(' ');
