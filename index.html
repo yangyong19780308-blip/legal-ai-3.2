@@ -2059,6 +2059,8 @@ function readElemForm() {
     evidence: evidence,
     facts: facts,
     elements: (typeof parseOfficialRowsText === 'function') ? parseOfficialRowsText(val('elemOfficialRows')) : null,
+    material: String((typeof currentDraft !== 'undefined' && currentDraft && currentDraft.material) || ''),
+    mode: String((typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint'),
     court: val('elemCourt'),
     signerName: plName,
     signDate: today()
@@ -2155,7 +2157,11 @@ function fillElemForm(obj) {
       set('elemOfficialRows', '');
       const dataNow = readElemForm();
       // AI 直接给出的官方要素行内容优先，其次用案由要素映射兜底
-      if (obj.elements && Object.keys(obj.elements).length) dataNow.elements = obj.elements;
+      if (obj.elements && Object.keys(obj.elements).length) {
+        dataNow.elements = (typeof elemSanitizeServiceChoice === 'function')
+          ? elemSanitizeServiceChoice(obj.elements, dataNow)
+          : obj.elements;
+      }
       const audit = officialRowAudit(dataNow.caseType, null, dataNow);
       if (audit && audit.missing && audit.missing.length) {
         missing.push('官方要素表未填 ' + audit.missing.length + ' 行');
@@ -3503,6 +3509,18 @@ function fillCellAfter(text, label, value) {
     return p1 + val + sp;
   });
 }
+/* 只在"标签：后面还空着"时才填——模型/当事人在复核框里已经写过的内容不动 */
+function fillCellIfEmpty(text, label, value) {
+  if (value === undefined || value === null || String(value).trim() === '') return text;
+  const lab = String(label || '').replace(/[：:]+\s*$/, '');
+  const re = new RegExp(escRe(lab) + '[：:]([ \\t\\u00a0]*)');
+  const m = re.exec(String(text));
+  if (!m) return text;
+  const after = String(text).slice(m.index + m[0].length);
+  const firstLine = after.split('\n')[0].replace(/[ \t\u00a0]+$/, '');
+  if (firstLine.trim()) return text;   // 已经有内容了
+  return fillCellAfter(text, lab, value);
+}
 function markCheck(text, from, to) {
   if (!from || !to) return text;
   const i = String(text).indexOf(from);
@@ -3630,6 +3648,50 @@ const LAYOUT_DOC_LABELS = {
   exec: ['申请书'],
   compensation: ['国家赔偿申请书']
 };
+/* 官方要素表"当事人信息"里、委托诉讼代理人之后还有两行：送达地址、是否接受电子送达
+   （官方原文：①"送达地址（所填信息除书面特别声明更改外，适用于案件一审、二审、再审所有后续程序）及收件人、电话"＝地址／收件人／电话；
+   ②"是否接受电子送达"＝是□ 方式：短信□ 微信□ 传真□ 邮箱□ 其他□ 否□）。
+   从官方 PDF 版式数据里没提取到这两行，这里按官方 docx 原样补上；执行/申请类不加。 */
+const ELEM_SERVICE_ROWS = [
+  ['r', '送达地址（所填信息除书面特别声明更改外，适用于案件一审、二审、再审所有后续程序）及收件人、电话',
+    '地址：\n收件人：\n电话：'],
+  ['r', '是否接受电子送达', '是□ 方式：短信□ 微信□ 传真□ 邮箱□ 其他□\n否□']
+];
+const ELEM_SERVICE_SKIP = ['exec', 'petition', 'change'];
+function elemAppendServiceRow(rows, docType) {
+  if (!rows || !rows.length) return rows;
+  if (ELEM_SERVICE_SKIP.indexOf(String(docType || '')) >= 0) return rows;
+  if (rows.some(r => r[0] === 'r' && /电子送达|送达地址/.test(String(r[1] || '')))) return rows;
+  const key = r => elemNormKey(String((r && r[1]) || ''));
+  const agentRe = /委托诉讼代理人|委托代理人|诉讼代理人|辩护人|法定代理人|代为告诉人/;
+  let at = -1;
+  // ① 紧跟在（第一个）委托诉讼代理人等代理人行之后
+  const agent = rows.findIndex(r => r[0] === 'r' && agentRe.test(String(r[1] || '')));
+  if (agent >= 0) {
+    at = agent + 1;
+    while (at < rows.length && rows[at][0] === 'r' && /代理人|辩护人|代为告诉人/.test(String(rows[at][1] || ''))) at++;
+  } else {
+    // ② 没有代理人行时，放在"当事人信息"里本方当事人之后（下一个当事人角色行之前）
+    const MAIN = /原告|自诉人|申请人|赔偿请求人|答辩人|被答辩人/;
+    const OTHER = /被告|被告人|被申请人|被执行人|第三人|赔偿义务机关|复议机关|其他当事人/;
+    let inParty = false, secEnd = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r[0] === 's') {
+        const n = key(r);
+        if (n.indexOf('当事人信息') >= 0) { inParty = true; continue; }
+        if (inParty) { secEnd = i; break; }
+      }
+      if (!inParty || r[0] !== 'r') continue;
+      if (OTHER.test(String(r[1] || '')) && !MAIN.test(String(r[1] || ''))) { at = i; break; }
+    }
+    if (at < 0) at = secEnd >= 0 ? secEnd : rows.length;
+  }
+  const out = rows.slice();
+  const add = ELEM_SERVICE_ROWS.map(r => r.slice());
+  out.splice.apply(out, [at, 0].concat(add));
+  return out;
+}
 function layoutDocTypeLabel(docType) {
   const list = LAYOUT_DOC_LABELS[docType];
   return (list && list[0]) || '';
@@ -3640,20 +3702,25 @@ function layoutMatchFor(caseType, docType) {
   const labels = LAYOUT_DOC_LABELS[docType];
   if (!labels || !labels.length) return null;
   const norm = (typeof normalizeCaseType === 'function') ? normalizeCaseType(caseType) : String(caseType || '');
+  let hit = null;
   for (const lab of labels) {
     const suffix = '|' + lab;
-    if (OFFICIAL_LAYOUTS[caseType + suffix]) return { label: lab, rows: OFFICIAL_LAYOUTS[caseType + suffix] };
+    if (OFFICIAL_LAYOUTS[caseType + suffix]) { hit = { label: lab, rows: OFFICIAL_LAYOUTS[caseType + suffix] }; break; }
     for (const k in OFFICIAL_LAYOUTS) {
       if (!k.endsWith(suffix)) continue;
       const n = k.slice(0, -suffix.length);
       const nn = (typeof normalizeCaseType === 'function') ? normalizeCaseType(n) : n;
-      if (nn === norm) return { label: lab, rows: OFFICIAL_LAYOUTS[k] };
+      if (nn === norm) { hit = { label: lab, rows: OFFICIAL_LAYOUTS[k] }; break; }
       if (nn && norm && (nn.indexOf(norm) >= 0 || norm.indexOf(nn) >= 0) && Math.min(nn.length, norm.length) >= 4) {
-        return { label: lab, rows: OFFICIAL_LAYOUTS[k] };
+        hit = { label: lab, rows: OFFICIAL_LAYOUTS[k] };
+        break;
       }
     }
+    if (hit) break;
   }
-  return null;
+  if (!hit) return null;
+  hit.rows = elemAppendServiceRow(hit.rows, docType);
+  return hit;
 }
 function layoutRowsFor(caseType, docType) {
   const m = layoutMatchFor(caseType, docType);
@@ -3756,19 +3823,55 @@ function elemAutoMarkBoxes(content, value) {
 }
 
 /* “无财产□／有财产□”“无债务□／有债务□”“无此问题□／有此问题□”这类成对选项：
-   有实质内容就勾“有…”，写明“无/没有”就勾“无…” */
-function elemMarkPairedChoice(content, value) {
+   —— 素材写明“无／没有／不存在…”→ 勾“无…”（否定词落在句中任意位置都算，不能只认开头）；
+   —— 素材确实提到该项（有钱债、有房产、有抚养问题…）→ 勾“有…”；
+   —— 素材没提、或只是把一段不相干的叙述放进这一行 → 两个框都留空，由当事人自己勾。
+   注意：不允许“只要这行有内容就勾有”——共同债务尤其不能默认有。 */
+const ELEM_PAIRED_TOPICS = [
+  {
+    topic: '财产', noBox: '无财产□', yesBox: '有财产□', negWord: '无财产', posWord: '有财产',
+    neg: /(无|没有|不存在|不涉及|不主张分割|未取得|未购置|未购买)[^。；;\n]{0,6}(夫妻|共同|婚后)?(财产|房产|房屋|存款|车辆|股权|门面|商铺|不动产)/,
+    pos: /财产|房产|房屋|存款|储蓄|车辆|汽车|股权|股票|基金|门面|商铺|不动产|共同(购买|购置|出资|还贷)|婚后(购买|购置|取得)|按揭/,
+    strong: /共同财产|夫妻财产|财产分割|分割财产|房产|房屋|存款|车辆|门面|商铺|股权|不动产/
+  },
+  {
+    topic: '债务', noBox: '无债务□', yesBox: '有债务□', negWord: '无债务', posWord: '有债务',
+    neg: /(无|没有|不存在|不涉及|不承担|不主张)[^。；;\n]{0,6}(夫妻|共同|婚后)?(债务|欠款|负债|借款|外债)/,
+    pos: /债务|欠款|负债|欠债|贷款|借款|外债|赊|未(偿还|清偿|归还|还清)|尚未还清/,
+    strong: /债务|欠款|负债|欠债|外债/
+  },
+  {
+    topic: '此问题', noBox: '无此问题□', yesBox: '有此问题□', negWord: '无此问题', posWord: '有此问题',
+    neg: /(无|没有|不存在|不涉及|不主张|无需)[^。；;\n]{0,4}(此问题|子女|抚养|抚养费|探望|赔偿|补偿|帮助)/,
+    pos: /此问题|抚养|子女|探望|亲子|赔偿|补偿|帮助/,
+    strong: /抚养|子女|探望|赔偿|补偿|帮助/
+  }
+];
+function elemMarkPairedChoice(content, value, opts) {
   const c = String(content || '');
   const v = String(value || '').trim();
   if (!c || !v) return c;
-  const neg = /^(无|没有|不存在|不主张)/.test(v);
+  // 来源可信度：AI 直接给这一行的内容最可信；案由要素/诉讼请求/关键词兜底要看内容是否真在说这一项，
+  // 免得把别的行（尤其是别的请求项）的文字扣到这一行来，凭空勾出“有债务/有财产/有此问题”
+  const src = (opts && opts.src) || '';
+  const label = (opts && opts.label) || '';
+  const srcLabel = (opts && opts.srcLabel) || '';
+  const substantive = v.replace(/[\s\u00a0]/g, '').length >= 4;
+  const rkeys = elemRowKeys(label);
+  const about = src === 'elem' || src === 'default'
+    || rkeys.some(k => v.indexOf(k) >= 0 || (srcLabel && srcLabel.indexOf(k) >= 0));
   let out = c;
-  [['财产', '无财产□', '有财产□'], ['债务', '无债务□', '有债务□'], ['此问题', '无此问题□', '有此问题□']].forEach(([, noBox, yesBox]) => {
-    const box = neg ? noBox : yesBox;
-    const word = box.slice(0, -1);
-    if (out.indexOf(box) < 0 && out.indexOf('□' + word) < 0) return;
-    const substantive = neg || v.replace(/[\s\u00a0]/g, '').length >= 4;
-    if (!substantive) return;
+  ELEM_PAIRED_TOPICS.forEach(tp => {
+    if (out.indexOf(tp.noBox) < 0 && out.indexOf(tp.yesBox) < 0) return;
+    let word = '';
+    if (tp.neg.test(v)) word = tp.negWord;
+    else {
+      // 债务最严："有债务"要有"债务/欠款/负债"这类明确记载（共同债务不允许默认有）；
+      // 其余成对选项：这段内容确实是在说这一行、且不是空话，才勾"有…"
+      const debtOk = src === 'elem' || tp.strong.test(srcLabel + v);
+      if (about && substantive && (tp.topic !== '债务' || (debtOk && tp.pos.test(v)))) word = tp.posWord;
+    }
+    if (!word) return;
     out = elemMarkOptionBox(out, word);
   });
   return out;
@@ -3862,10 +3965,11 @@ function elemStripPrefix(content, value) {
   }
   return t;
 }
-function elemApplyRowValue(content, value, label) {
+function elemApplyRowValue(content, value, label, opts) {
   const c = String(content || '');
   let v = elemStripPrefix(c, String(value || '').trim() || '').trim();
   if (!v) return c; // 复核文本只是模板原文（该行没填内容）
+  const srcOpt = opts || null;
   const bare = s => String(s || '').replace(/[\s\u00a0]/g, '');
   const choiceLike = /^(是|否|有|无|了解|不|同意|申请|主张|一般授权|特别授权|现金|转账|正式登记|预告登记|到期一次性|按月计息|按季计息|按年计息|暂不确定)/.test(v);
   const bareC = bare(c);
@@ -3881,9 +3985,12 @@ function elemApplyRowValue(content, value, label) {
   const n = elemNormKey(label || '');
   const hasBox = c.indexOf('□') >= 0;
   const choiceRow = hasBox && /是否|有无|了解|先行调解|授权|登记|还款方式|提供方式|类型|所有制/.test(n);
+  // 送达类行（是□ 方式：短信□ 微信□ 传真□ 邮箱□ 其他□ 否□）只勾选、不整行顶掉官方栏目：
+  // 模型常把它压缩成"☑是 方式：短信、微信；□否"，那样官方给的选项就没了
+  const keepFormat = /电子送达|送达方式|送达地址|接受送达|送达信息/.test(n);
   // AI 直接给了整行成品（含勾选框且覆盖模板原文）→ 采用；否则只把它当内容，
   // 避免模型自己写个“☑ …”就把官方模板原有栏目（无财产□／有财产□…）整行顶掉
-  if (/[☑]/.test(v) && v.length >= 8) {
+  if (!keepFormat && /[☑]/.test(v) && v.length >= 8) {
     const uniqC = Array.from(new Set(bareC.split('')));
     const cover = uniqC.length ? uniqC.filter(ch => bareV.indexOf(ch) >= 0).length / uniqC.length : 0;
     if (cover >= 0.6) return v;
@@ -3899,7 +4006,7 @@ function elemApplyRowValue(content, value, label) {
   }
   let out = elemApplyChoice(c, v);
   out = elemAutoMarkBoxes(out, v);
-  out = elemMarkPairedChoice(out, v);
+  out = elemMarkPairedChoice(out, v, srcOpt);
   if (choiceRow) {
     const filled = elemFillSlots(out, v);
     if (filled !== c || filled !== out) return filled;
@@ -3928,6 +4035,14 @@ function amounts(s) {
    这些规则不接受"没提到就默认否/无"的猜测。 */
 const ELEM_ROW_DEFAULTS = [
   // 素材明确提到 → 勾"是/有"；没提到 → 不动（留空）
+  [/是否接受电子送达|接受电子送达/, (t) => {
+    if (/(不|暂不|拒绝)(接受|同意|使用)?电子送达|不同意电子送达/.test(t)) return '否';
+    if (/接受电子送达|同意电子送达|同意以电子|电子送达方式|以电子方式送达|电子送达地址/.test(t)) {
+      const ways = ['短信', '微信', '传真', '邮箱'].filter(w => t.indexOf(w) >= 0).join(' ');
+      return ways ? '是 ' + ways : '是';
+    }
+    return '';
+  }],
   [/是否要求提前还款|提前还款/, (t) => (/提前还款|加速到期|解除合同/.test(t) ? '是' : '')],
   [/是否主张担保权利/, (t) => (/担保|抵押|质押|保证|优先受偿/.test(t) ? '是' : '')],
   [/是否主张实现债权的费用/, (t) => (/律师费|实现债权的费用|保全费|公告费/.test(t) ? '是' : '')],
@@ -3950,12 +4065,30 @@ function elemDefaultForRow(label, data) {
   const text = [
     (data.claims || []).join(' '),
     (data.facts || []).map(f => (f.label || '') + ' ' + (f.content || '')).join(' '),
-    (data.evidence || []).map(e => typeof e === 'string' ? e : (e && e.name) || '').join(' ')
+    (data.evidence || []).map(e => typeof e === 'string' ? e : (e && e.name) || '').join(' '),
+    String(data.material || '')   // 当事人给的原始素材：表格式表单里放不下的表述（如"同意电子送达"）也认
   ].join(' ');
   for (const [re, fn] of ELEM_ROW_DEFAULTS) {
     if (re.test(n)) return fn(text) || '';
   }
   return '';
+}
+
+/* “是否接受电子送达”只认素材：AI 回填时把模型自己猜的勾选/方式剔掉，只留素材能确认的结论。
+   这样复核框里不会出现模型凭空勾的"是"，当事人自己在复核框里改的内容仍然有效。 */
+function elemSanitizeServiceChoice(elements, data) {
+  if (!elements) return elements;
+  const out = {};
+  for (const k in elements) {
+    if (/是否接受电子送达|接受电子送达/.test(elemNormKey(k))) {
+      const byMaterial = elemDefaultForRow('是否接受电子送达', data);
+      if (!byMaterial) continue;   // 素材没提 → 整条丢掉，让这一行留空
+      out[k] = byMaterial;
+      continue;
+    }
+    out[k] = elements[k];
+  }
+  return out;
 }
 
 /* 行标签 → 案由要素（data.facts）关键词映射，覆盖各案由通用骨架 */
@@ -3991,9 +4124,13 @@ const ELEM_ROW_FACT_HINTS = [
 
 /* 案由要素对不上时，从"诉讼请求"里取对应那一项（传统诉状的请求项通常写得很完整） */
 function elemRowValueFromClaims(label, data) {
+  const hit = elemRowClaimHit(label, data);
+  return hit ? hit.content : '';
+}
+function elemRowClaimHit(label, data) {
   const claims = (data.claims || []).map(s => String(s || '').trim()).filter(Boolean);
   const n = elemNormKey(label);
-  if (!n || !claims.length) return '';
+  if (!n || !claims.length) return null;
   const groups = [
     [/财产|房产|房屋|门面|商铺|不动产|存款|车辆|汽车|股权|股票|基金|分割/, ['财产', '房产', '房屋', '门面', '商铺', '存款', '车辆', '股权', '分割', '共有']],
     [/债务|欠款|负债/, ['债务', '欠款', '借款']],
@@ -4009,9 +4146,9 @@ function elemRowValueFromClaims(label, data) {
   for (const [re, keys] of groups) {
     if (!re.test(n)) continue;
     const hit = claims.find(c => keys.some(k => c.indexOf(k) >= 0));
-    if (hit) return hit;
+    if (hit) return { content: hit, label: '' };
   }
-  return '';
+  return null;
 }
 
 /* —— 通用兜底：按行标题里的关键词，去案由要素/诉讼请求里找最相关的一条 ——
@@ -4039,9 +4176,25 @@ function elemKeywords(label) {
   return out.filter((w, i) => out.indexOf(w) === i && w.length >= 2);
 }
 
+/* 行标签的检索词：整体词 + 二字词（去掉"情况/事实/时间"这类通用词），用于判断
+   "这段内容是别的行串过来的，还是真在说这一行"。 */
+function elemRowKeys(label) {
+  const out = [];
+  const push = w => { if (w.length >= 2 && ELEM_STOP_WORDS.indexOf(w) < 0 && out.indexOf(w) < 0) out.push(w); };
+  elemKeywords(label).forEach(w => {
+    push(w);
+    if (w.length >= 3) for (let i = 0; i + 2 <= w.length; i++) push(w.slice(i, i + 2));
+  });
+  return out;
+}
+
 function elemRowValueGeneric(label, data) {
+  const hit = elemRowGenericHit(label, data);
+  return hit ? hit.content : '';
+}
+function elemRowGenericHit(label, data) {
   const keys = elemKeywords(label);
-  if (!keys.length) return '';
+  if (!keys.length) return null;
   const pool = [];
   (data.facts || []).forEach(f => {
     const text = String(f.content || '').trim();
@@ -4065,24 +4218,178 @@ function elemRowValueGeneric(label, data) {
   // 行标题本身很短、只有一两个专有名词（本金、医疗费、物业费、理赔款…）时，命中一个即可；
   // 长标题要求至少两个词命中，避免误扣
   const need = keys.length <= 2 ? 2 : 4;
-  if (best && best.score >= need) return best.text;
-  return '';
+  if (best && best.score >= need) return { content: best.text, label: best.lab || '' };
+  return null;
 }
 
 function elemRowValueFromFacts(label, data) {
+  const hit = elemRowFactHit(label, data);
+  return hit ? hit.content : '';
+}
+/* 同上一行，但连"取自哪条案由要素"一起返回（勾选判断要看来源是不是真在说这一项） */
+function elemRowFactHit(label, data) {
   const facts = (data.facts || []).filter(f => f && String(f.content || '').trim());
   const n = elemNormKey(label);
-  if (!n || !facts.length) return '';
+  if (!n || !facts.length) return null;
   for (const [re, keys] of ELEM_ROW_FACT_HINTS) {
     if (!re.test(n)) continue;
-    if (!keys.length) return '';
+    if (!keys.length) return null;
     for (const key of keys) {
       const nk = elemNormKey(key);
       const hit = facts.find(f => elemNormKey(f.label || '').indexOf(nk) >= 0);
-      if (hit) return String(hit.content || '').trim();
+      if (hit) return { content: String(hit.content || '').trim(), label: String(hit.label || '') };
     }
   }
-  return '';
+  return null;
+}
+
+/* ==================== 一格多个子项（官方模板常见写法） ====================
+   官方模板里有些行在同一格内并列若干子项，最典型的是离婚纠纷的
+   “结婚时间：／生育子女情况：／双方生活情况：／离婚事由：／之前有无提起过离婚诉讼：”。
+   这类行不能只把一整段叙述糊在下面，要按子项分别落到对应子项名后面：
+     子项名 ← ① AI/复核框里写明的“子项：内容” ② 案由要素（事实与理由）同名/近义条
+             ← ③ 该行叙述里的分句 ④ 案由要素标签关键词兜底
+   取不到的子项保持空白（确认不了留空，由当事人自己填），不做默认。 */
+const ELEM_SUBLABEL_HINTS = [
+  /* —— 婚姻家庭（离婚、婚约财产、共有物分割等） —— */
+  [/结婚时间|登记结婚|婚礼/, ['结婚时间地点', '结婚时间', '登记结婚'], ['登记结婚', '领取结婚证', '婚礼']],
+  [/生育子女|子女情况|子女抚育|子女抚养现状/, ['子女情况', '生育子女情况', '子女抚养', '子女'],
+    ['生育', '子女', '婚生子', '婚生女', '孩子', '抚养']],
+  [/双方生活|共同生活|婚后生活|生活情况|婚后状况/, ['分居情况', '夫妻感情状况', '共同生活情况', '婚姻关系'],
+    ['分居', '共同生活', '一起生活', '两地']],
+  [/离婚事由|离婚原因|感情破裂/, ['夫妻感情破裂原因', '感情状况', '离婚事由', '分居情况'],
+    ['感情破裂', '夫妻感情', '不正当', '出轨', '家暴', '殴打', '争吵', '矛盾', '性格不合', '分居']],
+  [/之前有无提起过离婚诉讼|离婚诉讼|再次起诉/, ['离婚诉讼情况', '之前离婚诉讼', '再次起诉离婚', '诉讼情况'],
+    ['起诉离婚', '离婚诉讼', '曾起诉', '判决不准离婚', '撤诉', '再次起诉']],
+  /* —— 合同、租赁、买卖等案由的常见子项 —— */
+  [/合同名称|合同编号|协议名称/, ['合同签订情况', '合同情况', '合同名称'], ['合同', '协议']],
+  [/签订时间|订立时间|签约时间/, ['合同签订情况', '签订时间'], ['签订', '订立', '签约']],
+  [/签订地点|订立地点|签约地点/, ['合同签订情况', '签订地点'], ['签订', '订立']],
+  [/签订主体|合同主体|合同当事人/, ['合同签订情况', '合同主体'], ['甲方', '乙方', '签订']],
+  [/标的物|货物名称|品名|规格|型号/, ['标的物数量金额', '标的物情况', '货物情况'], ['标的物', '货物', '品名', '规格', '型号']],
+  [/数量|单价|总价|价款|货款|租金/, ['标的物数量金额', '价款与付款情况', '租金及押金约定', '欠费情况'], ['数量', '单价', '价款', '货款', '租金']],
+  [/金额|数额/, ['标的总额', '标的物数量金额', '欠款', '欠费'], ['金额', '元']],
+  [/履行期限|交货期限|交付期限|付款期限|租赁期限|借款期限/, ['履行情况', '还款约定', '租赁期限', '合同约定'], ['期限', '之前', '届满']],
+  [/交货时间|交付时间|发货时间|付款时间|支付时间/, ['履行情况', '交付情况', '付款情况'], ['交付', '交货', '发货', '付款', '支付']],
+  [/交货地点|交付地点|履行地点/, ['履行情况', '交付情况', '合同签订情况'], ['交付', '交货', '履行地']],
+  [/履行情况|履行方式|付款方式|支付方式/, ['履行情况', '付款情况', '还款约定'], ['履行', '付款', '支付', '方式']],
+  [/验收|质量异议|质量争议/, ['验收情况', '履行情况', '质量'], ['验收', '质量']],
+  [/违约|逾期|迟延/, ['被告违约情况', '违约情况', '逾期情况'], ['违约', '逾期', '迟延', '未按']],
+  [/利息|利率/, ['还款约定', '利息', '利率', '逾期情况'], ['利息', '利率']],
+  [/担保|抵押|质押|保证/, ['担保情况', '抵押', '质押', '保证'], ['担保', '抵押', '质押', '保证']],
+  [/仲裁|管辖/, ['管辖', '仲裁'], ['仲裁', '管辖']],
+  [/催告|催促|催收/, ['催告情况', '催收情况', '履行情况'], ['催告', '催促', '催收', '催要', '催款']],
+  [/时间|日期/, ['时间', '日期'], []],
+  [/地点|地址|所在地/, ['地点', '地址', '所在地'], []],
+  [/方式/, ['方式'], []],
+  [/事实|理由|经过|情况说明/, ['事实', '经过', '事实与理由'], []]
+];
+
+function elemSubKeywords(label, extra) {
+  const out = [];
+  const push = w => {
+    const s = String(w || '').trim();
+    if (s.length >= 2 && s.length <= 30 && out.indexOf(s) < 0) out.push(s);
+  };
+  for (const [re, , extras] of ELEM_SUBLABEL_HINTS) if (re.test(label)) (extras || []).forEach(push);
+  elemKeywords(label).forEach(w => {
+    push(w);
+    if (w.length >= 4) for (let i = 0; i + 2 <= w.length; i++) push(w.slice(i, i + 2));
+  });
+  return out;
+}
+
+/* 当事人/代理人这类"身份栏"不参与子项填充（整块由结构化字段或人工填） */
+const ELEM_PARTY_BLOCK = /(原告|被告|第三人|自诉人|被告人|上诉人|申请人|申请执行人|被执行人|赔偿请求人|赔偿义务机关|答辩人|被答辩人|委托诉讼代理人|委托代理人|诉讼代理人|辩护人|法定代理人|代为告诉人|其他当事人|当事人|担保人|被担保人|复议机关)/;
+
+/* 找出该格里"只有子项名、后面是空的"行（如“双方生活情况：”） */
+function elemSubLabelLines(content) {
+  const out = [];
+  String(content || '').split('\n').forEach((ln, i) => {
+    const t = ln.trim();
+    const m = t.match(/^([^：:\n]{2,20})[：:][ \t\u00a0]*$/);
+    if (m) out.push({ i: i, label: m[1].trim() });
+  });
+  return out;
+}
+
+function elemSubItemFill(label, content, value, data) {
+  const c = String(content || '');
+  if (ELEM_PARTY_BLOCK.test(String(label || ''))) return null;
+  const subs = elemSubLabelLines(c);
+  if (subs.length < 2) return null;
+  const v = String(value || '').trim();
+  const facts = ((data && data.facts) || []).filter(f => f && String(f.content || '').trim());
+  /* ① 值里已经写明的“子项：内容” */
+  const pairs = [];
+  v.split(/[\n；;]+/).forEach(seg => {
+    const at = seg.search(/[：:]/);
+    if (at <= 0) return;
+    const lab = seg.slice(0, at).trim().replace(/^[☑✓√\s]*\d*[.．、)）]?\s*/, '');
+    const val = seg.slice(at + 1).trim();
+    if (lab && val) pairs.push({ label: lab, value: val });
+  });
+  /* ③ 叙述分句（含逗号，便于把一句话里的结婚/生育/分居信息拆开）；
+     复核框回灌的文本里会带上"金额及明细：""之前有无提起过离婚诉讼："这类空栏目名，不能当内容用 */
+  const clauses = v.split(/[。；;，,\n]+/).map(s => s.trim())
+    .filter(s => s.length >= 3 && !/^[^：:\n]{2,20}[：:][ \t\u00a0]*$/.test(s) && !/^[□☑✓√\s]+$/.test(s));
+  const usedFact = {}, usedClause = {}, usedValue = {}, doneLabel = {};
+  const rows = [];
+  subs.forEach(sub => {
+    const ns = elemNormKey(sub.label);
+    if (!ns || doneLabel[ns]) return;   // 同一格内重名的子项（如三处“金额：”）不重复填
+    let val = '';
+    const p = pairs.find(x => {
+      const nx = elemNormKey(x.label);
+      return nx && (nx === ns || nx.indexOf(ns) >= 0);
+    });
+    if (p) val = p.value;
+    /* 子项名 → 案由要素（表里列出的常见子项，按标签取"事实与理由"里的那一条） */
+    let known = false;
+    if (!val) {
+      for (const [re, keys] of ELEM_SUBLABEL_HINTS) {
+        if (!re.test(sub.label)) continue;
+        known = true;
+        for (const key of keys) {
+          const nk = elemNormKey(key);
+          const hit = facts.find(f => !usedFact[key] && elemNormKey(f.label || '').indexOf(nk) >= 0);
+          if (hit) { val = String(hit.content || '').trim(); usedFact[key] = 1; break; }
+        }
+        if (val) break;
+      }
+    }
+    /* 素材里正好有同名要素（子项名与要素标签一致） */
+    if (!val) {
+      const hit = facts.find(f => {
+        const nk = elemNormKey(f.label || '');
+        return nk && nk.length >= 2 && (nk === ns || (ns.length >= 3 && nk.indexOf(ns) >= 0));
+      });
+      if (hit) { val = String(hit.content || '').trim(); known = true; }
+    }
+    /* 该行叙述里的分句：只认表里列出的子项，且关键词要够具体（命中长度合计 ≥3 字） */
+    if (!val && known && clauses.length) {
+      const keys = elemSubKeywords(sub.label);
+      let best = { at: -1, score: 0 };
+      clauses.forEach((cl, idx) => {
+        if (usedClause[idx]) return;
+        const score = keys.reduce((sum, k) => sum + (cl.indexOf(k) >= 0 ? k.length : 0), 0);
+        if (score > best.score) best = { at: idx, score: score };
+      });
+      if (best.at >= 0 && best.score >= 3) { val = clauses[best.at]; usedClause[best.at] = 1; }
+    }
+    doneLabel[ns] = 1;
+    if (!val) return;
+    const nv = elemNormKey(val);
+    if (usedValue[nv]) return;   // 同一段内容不重复抄给多个子项
+    usedValue[nv] = 1;
+    rows.push({ i: sub.i, label: sub.label, value: val });
+  });
+  /* 至少要填上一半子项才接管这一行，否则保持原有“整段补在下面”的逻辑 */
+  if (rows.length < 2 || rows.length / subs.length < 0.5) return null;
+  const lines = c.split('\n');
+  rows.forEach(r => { lines[r.i] = r.label + '：' + r.value; });
+  const text = lines.join('\n');
+  return text === c ? null : { text: text, filled: rows.length, labels: rows.map(r => r.label) };
 }
 
 function fillLayoutContent(label, content, data, elements) {
@@ -4135,19 +4442,51 @@ function fillLayoutContent(label, content, data, elements) {
   }
   // ① 官方要素行内容（AI 提取 / 表单填写）② 案由要素按行关键词兜底 ③ 未提及行的常规默认勾选
   const elemVal = elemElementValue(label, elements);
-  const factVal = elemVal ? '' : elemRowValueFromFacts(label, data);
-  const claimsVal = (elemVal || factVal) ? '' : elemRowValueFromClaims(label, data);
-  const genericVal = (elemVal || factVal || claimsVal) ? '' : elemRowValueGeneric(label, data);
+  const factHit = elemVal ? null : elemRowFactHit(label, data);
+  const claimHit = (elemVal || factHit) ? null : elemRowClaimHit(label, data);
+  const genHit = (elemVal || factHit || claimHit) ? null : elemRowGenericHit(label, data);
+  const factVal = factHit ? factHit.content : '';
+  const claimsVal = claimHit ? claimHit.content : '';
+  const genericVal = genHit ? genHit.content : '';
   let value = elemVal || factVal || claimsVal || genericVal;
+  const valueSrc = elemVal ? 'elem' : factVal ? 'fact' : claimsVal ? 'claims' : genericVal ? 'generic' : '';
+  const valueSrcLabel = factHit ? factHit.label : (claimHit ? claimHit.label : (genHit ? genHit.label : ''));
+  // “是否接受电子送达”：只认素材里明确写了的（接受/同意＋方式，或明确不接受）。
+  // 素材没写就留空——不采信模型自己勾的"是"（模型常因为当事人有手机号就勾"是"、甚至填个邮箱占位）。
+  if (/是否接受电子送达|接受电子送达/.test(n)) {
+    value = elemDefaultForRow(label, data);
+  }
   // “是否催促过履行”行：素材里没有“催”的事实就不要把交货日期等塞进催促时间
   if (value && /催促|催告/.test(n) && !/催/.test(value)) value = '';
+  // 一格多个子项的行（如离婚“婚姻关系基本情况”：结婚时间／生育子女情况／双方生活情况／离婚事由／
+  // 之前有无提起过离婚诉讼）：按子项分别落到对应栏目，取不到的留空；把整段叙述糊在下面的做法只留给单栏行
+  // “送达地址…及收件人、电话”行：按三个槽填——模型/复核框写了的用写的，其余用本方当事人信息补
+  const isDeliveryRow = /送达地址/.test(n) && /收件人/.test(String(content || ''));
+  if (isDeliveryRow) {
+    const srcText = String(value || '');
+    const grab = lab => {
+      const re = new RegExp(escRe(lab) + '[：:]\\s*([\\s\\S]*?)(?=\\s*(?:地址|收件人|电话|邮箱|传真)[：:]|\\n|$)');
+      const m = re.exec(srcText);
+      return m ? m[1].replace(/[；;，,\s]+$/, '').trim() : '';
+    };
+    const mode = String(data.mode || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
+    const own = (mode === 'answer' ? (data.defendant || {}) : (data.plaintiff || {}));
+    t = fillCellIfEmpty(t, '地址', grab('地址') || own.addr || own.liveAddr || '');
+    t = fillCellIfEmpty(t, '收件人', grab('收件人') || own.name || '');
+    t = fillCellIfEmpty(t, '电话', grab('电话') || own.phone || '');
+    value = '';
+  }
   if (value && !ownFilled) {
-    const applied = elemApplyRowValue(t, value, label);
+    const sub = elemSubItemFill(label, t, value, data);
+    if (sub) { t = sub.text; value = ''; }
+  }
+  if (value && !ownFilled) {
+    const applied = elemApplyRowValue(t, value, label, { src: valueSrc, label: label, srcLabel: valueSrcLabel });
     if (applied && applied.trim() !== t.trim()) t = applied;
   }
   const def = elemDefaultForRow(label, data);
   if (def) {
-    const applied = elemApplyRowValue(t, def, label);
+    const applied = elemApplyRowValue(t, def, label, { src: 'default', label: label });
     if (applied && applied.trim() !== t.trim()) t = applied;
     else if (!t.trim()) t = def;
   }
