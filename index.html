@@ -777,6 +777,14 @@ function classifyRateLimit(code, msg) {
 const channelLimitedUntil = {};
 function channelLimited(cp) { return (channelLimitedUntil[cp] || 0) > Date.now(); }
 function markChannelLimited(cp, ms) { channelLimitedUntil[cp] = Date.now() + ms; }
+/* 智谱免费档拥堵（429/1305）时的模型降级链：只换免费模型，避免悄悄走付费通道。
+   想让它兜底到付费模型（glm-4.6 等），把模型名加进这个数组即可。 */
+const ZHIPU_MODEL_CHAIN = ['glm-4.7-flash', 'glm-4.5-flash', 'glm-4-flash'];
+function nextZhipuModel(cur) {
+  const i = ZHIPU_MODEL_CHAIN.indexOf(String(cur || ''));
+  if (i < 0) return '';                       // 用户自己填的模型不在链里 → 不擅自替换
+  return i + 1 < ZHIPU_MODEL_CHAIN.length ? ZHIPU_MODEL_CHAIN[i + 1] : '';
+}
 function providerChain() {
   const primary = state.provider;
   const hasKey = x => !!(state.keys && state.keys[x]) && !!((state.bases && state.bases[x]) || PROVIDERS[x].base);
@@ -821,7 +829,7 @@ async function callLLM(messages, opts) {
 
   const tryProvider = async (cp, pi) => {
     const base = (state.bases && state.bases[cp]) || PROVIDERS[cp].base;
-    const model = (state.models && state.models[cp]) || PROVIDERS[cp].model;
+    let model = (state.models && state.models[cp]) || PROVIDERS[cp].model;
     const key = state.keys && state.keys[cp];
     for (let attempt = 0; ; attempt++) {
       let res = null;
@@ -829,16 +837,25 @@ async function callLLM(messages, opts) {
         const gap = lastCallAt + REQUEST_GAP_MS - Date.now();
         if (gap > 0) await waitAbortable(gap);
         lastCallAt = Date.now();
+        const reqBody = {
+          model: model,
+          messages: messages,
+          temperature: opts.temp != null ? opts.temp : 0.3,
+          max_tokens: opts.maxTokens || 8192,
+          stream: false
+        };
+        // 智谱 GLM 是"思考模型"：默认先吐一大段思维链，正文经常是空的、还慢。实测两组参数不一样：
+        //   glm-4.x（含 4.7-flash）：thinking:{type:'disabled'} 关掉思考；glm-5.x：只认 reasoning_effort: low/high/max
+        //（想保留思考链：控制台 state.zhipuThinking='enabled'）
+        if (cp === 'zhipu') {
+          const zm = String(model || '');
+          if (/^glm-5/i.test(zm)) reqBody.reasoning_effort = state.zhipuReasoningEffort || 'low';
+          else if (state.zhipuThinking !== 'enabled') reqBody.thinking = { type: 'disabled' };
+        }
         res = await fetch(base, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify({
-            model: model,
-            messages: messages,
-            temperature: opts.temp != null ? opts.temp : 0.3,
-            max_tokens: opts.maxTokens || 8192,
-            stream: false
-          }),
+          body: JSON.stringify(reqBody),
           signal: ctrl.signal
         });
       } catch (e) {
@@ -862,6 +879,19 @@ async function callLLM(messages, opts) {
         const rate = classifyRateLimit(code, msg);
         if (res.status === 429 || /(too many requests|rate.?limit|请求过于频繁|输入过于频繁|限流|访问量过大|速率限制|使用上限)/i.test(t)) {
           if (rate === 'balance') { finish(); throw new Error('账户欠费（' + PROVIDERS[cp].label + '）：' + msg.slice(0, 120)); }
+          // 智谱免费档高峰期会整段拥堵（1305"该模型当前访问量过大"）：
+          // 先自动换用同平台其它模型（glm-4.6 → glm-4.5-flash → glm-4-flash），别整条通道直接失败
+          if (cp === 'zhipu') {
+            const next = nextZhipuModel(model);
+            if (next) {
+              toast('「' + model + '」当前拥堵（' + (code || res.status) + '），自动换用 ' + next + ' 重试…');
+              model = next;
+              state.models.zhipu = next;
+              try { saveState(); } catch (e) {}
+              await waitAbortable(1200);
+              continue;
+            }
+          }
           lastRate = lastRate || { type: rate, msg: msg, code: code, provider: cp };
           markChannelLimited(cp, COOLDOWN[rate] || 20000);
           if (rate === 'account' || rate === 'quota') return null;
@@ -893,6 +923,17 @@ async function callLLM(messages, opts) {
       if (!j.choices || !j.choices[0]) {
         const rate = classifyRateLimit(errCode, errMsg);
         if (/使用上限|访问量过大|速率限制|请求过于频繁|限流|限额|1302|1305|1308/.test(errMsg + ' ' + errCode)) {
+          if (cp === 'zhipu') {
+            const next = nextZhipuModel(model);
+            if (next) {
+              toast('「' + model + '」当前拥堵（' + (errCode || '') + '），自动换用 ' + next + ' 重试…');
+              model = next;
+              state.models.zhipu = next;
+              try { saveState(); } catch (e) {}
+              await waitAbortable(1200);
+              continue;
+            }
+          }
           lastRate = lastRate || { type: rate, msg: errMsg, code: errCode, provider: cp };
           markChannelLimited(cp, COOLDOWN[rate] || 20000);
           return null;
@@ -900,7 +941,9 @@ async function callLLM(messages, opts) {
         finish();
         throw new Error('接口返回异常：' + (errMsg || '无有效内容').slice(0, 200));
       }
-      const text = (j.choices[0].message && j.choices[0].message.content) || '';
+      // 正文为空但模型吐了思维链（思考模型 + max_tokens 不够时）→ 用思维链兜底，别给用户一个空白结果
+      const msgObj = (j.choices[0] && j.choices[0].message) || {};
+      const text = (msgObj.content || msgObj.reasoning_content || '').toString();
       const u = j.usage || {};
       const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
       const cost = estCost(cp, inT, outT);
