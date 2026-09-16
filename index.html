@@ -369,8 +369,8 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
         </div>
       </div>
       <label class="fld" id="elemClaimsLabel">诉讼请求（每行一项）</label>
-      <textarea id="elemClaims" placeholder="1. 请求判令被告偿还借款本金…&#10;2. 请求判令被告支付利息…"></textarea>
-      <label class="fld" id="elemEvidenceLabel">证据清单（每行一项：名称｜来源/形式｜证明目的）</label>
+      <textarea id="elemClaims" placeholder="1. 请求判令被告偿还借款本金50000元&#10;2. 请求判令被告支付利息：以50000元为基数，自2024年6月1日起按全国银行间同业拆借中心公布的贷款市场报价利率（LPR）计算至实际清偿之日止"></textarea>
+      <label class="fld" id="elemEvidenceLabel">证据清单（每行一项：编号｜证据名称｜证据来源｜拟证明事项）</label>
       <textarea id="elemEvidence" placeholder="1. 借条（原件）｜证明借贷关系成立&#10;2. 银行转账记录｜证明款项已交付"></textarea>
       <div id="elemFactFields"></div>
       <label class="fld">官方要素表逐行内容（已按模板各要素行映射，可修改；换行用 ⏎ 表示）</label>
@@ -960,7 +960,7 @@ async function callLLM(messages, opts) {
 }
 
 /* ---------- 文书系统提示词 ---------- */
-const SYS = '你是“法务AI 3.2”的法律文书助手，服务对象是基层法律工作者和普通群众。严格规则：1）只依据用户提供的素材撰写，不编造事实、金额、日期、案号、人名；2）素材中缺失的信息一律写“（待补充）”，绝不猜测；3）引用法律条文必须真实，不确定就写“依据相关规定”；4）金额、利率、起算日等必须具体明确；5）文书末尾的具状人/申请人姓名与日期留空；6）标题居中，正文规范，段落清晰。';
+const SYS = '你是“法务AI 3.2”的法律文书助手，服务对象是基层法律工作者和普通群众。严格规则：1）只依据用户提供的素材撰写，不编造事实、金额、日期、案号、人名；2）素材中缺失的信息一律写“（待补充）”，绝不猜测；3）引用法律条文必须真实，不确定就写“依据相关规定”；4）金额、利率、起算日等必须具体明确，利息按官方写法写全：“以××元为基数，自××年××月××日起按全国银行间同业拆借中心公布的贷款市场报价利率（LPR）〔×倍／年利率×%〕计算至实际清偿之日止”，不得只写“利息”“LPR”“同期利率”；5）文书末尾的具状人/申请人姓名与日期留空；6）标题居中，正文规范，段落清晰。';
 const SYS_RESEARCH = '你是“法务AI 3.2”的法律研究助手。要求：1）回答必须引用真实存在的法律、行政法规、司法解释名称及条文号；2）不确定的内容明确说明；3）分点作答，便于阅读；4）最后单独一行注明“本回答由 AI 生成，仅供参考，不构成法律意见”。';
 
 /* ==================== 案件档案 ==================== */
@@ -1235,6 +1235,22 @@ const ELEM_UI_LABELS = {
   }
 };
 
+/* 官方栏头提示：机动车交通事故责任纠纷的诉讼请求按官方 13 项三段分组 */
+function elemClaimsHint(caseType) {
+  if (/机动车交通事故责任纠纷/.test(String(caseType || ''))) {
+    return '诉讼请求（每行一项）｜官方栏头：主张人身损害赔偿填第 1–10 项，赔偿财产损失填第 11 项，第 12–13 项为共同项';
+  }
+  return '';
+}
+/* 该案由的官方版式里是否带附件证据清单表（列头：编号｜页码｜证据名称｜证据来源｜拟证明事项） */
+function elemEvidenceAttach(caseType, mode) {
+  try {
+    const dt = (typeof docTypeForMode === 'function') ? docTypeForMode(mode || 'complaint', caseType) : 'complaint';
+    const rows = (typeof layoutRowsFor === 'function') ? layoutRowsFor(caseType, dt) : null;
+    return !!(rows && rows.some(r => r[0] === 'r' && String(r[2] || '').indexOf('拟证明事项') >= 0));
+  } catch (e) { return false; }
+}
+
 function applyDraftModeLabels(mode) {
   const selVal = ($('caseTypeSel') ? $('caseTypeSel').value : '') || currentDraft.caseType || '';
   let fam = 'complaint';
@@ -1247,13 +1263,24 @@ function applyDraftModeLabels(mode) {
     else if (dt === 'answer') fam = 'answer';
   }
   const L = ELEM_UI_LABELS[fam] || ELEM_UI_LABELS.complaint;
+  let claimsLabel = L.claims;
+  let evLabel = L.ev;
+  const hint = elemClaimsHint(selVal);
+  if (hint && fam === 'complaint') claimsLabel = hint;
+  if ((fam === 'complaint' || fam === 'answer') && elemEvidenceAttach(selVal, mode)) {
+    evLabel = '证据清单（每行一项：编号｜证据名称｜证据来源｜拟证明事项，对应成稿附件表列头）';
+  }
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set('typeRowLabel', L.type);
   set('elemFormSub', L.sub);
   set('elemPartyP', L.p);
   set('elemPartyD', L.d);
-  set('elemClaimsLabel', L.claims);
-  set('elemEvidenceLabel', L.ev);
+  set('elemClaimsLabel', claimsLabel);
+  set('elemEvidenceLabel', evLabel);
+  const ci = $('elemClaims');
+  if (ci && fam === 'complaint') {
+    ci.placeholder = '1. 请求判令被告偿还借款本金50000元\n2. 请求判令被告支付利息：以50000元为基数，自2024年6月1日起按全国银行间同业拆借中心公布的贷款市场报价利率（LPR）计算至实际清偿之日止';
+  }
   const b = $('btnElemGen');
   if (b) b.textContent = L.btn;
 }
@@ -1303,6 +1330,7 @@ async function draftAnalyze(force) {
         prompt += '说明：defendant 为答辩人（行政机关/授权组织），plaintiff 为原审原告；素材未提及的字段一律为空字符串或空数组，绝不编造。\n';
       }
       prompt += '要求：素材未提及的字段一律为空字符串或空数组，绝不编造。\n';
+      prompt += '利息写法：claims 里主张利息的，必须写成“以××元为基数，自××年××月××日起按全国银行间同业拆借中心公布的贷款市场报价利率（LPR）〔×倍／年利率×%〕计算至实际清偿之日止”，并写明本金基数；不要只写“利息”“LPR”“同期利率”。\n';
       let labels = [];
       const key = elemKeyOf($('caseTypeSel').value || currentDraft.caseType || '');
       if (mode === 'complaint') {
@@ -3119,7 +3147,8 @@ async function extractGovernElements(desc, scenario) {
   const prompt = '你是法律文书要素提取专家。请从下面的基层治理场景素材中提取撰写民事起诉状所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
     '场景：' + scenario + '\n' +
     'JSON 结构：{"caseType":"案由名称","plaintiff":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"defendant":{"name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":""},"claims":["诉讼请求1"],"evidence":["证据1"],"factFields":{"要素标签":"内容"},"factReason":"","court":""}\n' +
-    '要求：素材未提及的字段一律为空字符串或空数组，绝不编造；诉讼请求可多条。\n素材：\n' + desc;
+    '要求：素材未提及的字段一律为空字符串或空数组，绝不编造；诉讼请求可多条。\n' +
+    '利息写法：主张利息的写成“以××元为基数，自××年××月××日起按全国银行间同业拆借中心公布的贷款市场报价利率（LPR）〔×倍／年利率×%〕计算至实际清偿之日止”。\n素材：\n' + desc;
   const r = await callLLM([
     { role: 'system', content: SYS },
     { role: 'user', content: prompt }
