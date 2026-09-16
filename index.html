@@ -4107,13 +4107,12 @@ function amounts(s) {
    这些规则不接受"没提到就默认否/无"的猜测。 */
 const ELEM_ROW_DEFAULTS = [
   // 素材明确提到 → 勾"是/有"；没提到 → 不动（留空）
+  /* 电子送达：默认就是"是☑ + 短信☑"（当事人要求，所有含这一行的模板统一如此）；
+     素材明确写"不接受/不同意电子送达"→ 勾"否"；素材另写了方式（微信/传真/邮箱）→ 一并勾上。 */
   [/是否接受电子送达|接受电子送达/, (t) => {
-    if (/(不|暂不|拒绝)(接受|同意|使用)?电子送达|不同意电子送达/.test(t)) return '否';
-    if (/接受电子送达|同意电子送达|同意以电子|电子送达方式|以电子方式送达|电子送达地址/.test(t)) {
-      const ways = ['短信', '微信', '传真', '邮箱'].filter(w => t.indexOf(w) >= 0).join(' ');
-      return ways ? '是 ' + ways : '是';
-    }
-    return '';
+    if (/(不|暂不|拒绝)(接受|同意|使用)?电子送达|不同意电子送达|不接受电子送达/.test(t)) return '否';
+    const ways = ['短信'].concat(['微信', '传真', '邮箱'].filter(w => t.indexOf(w) >= 0));
+    return '是 ' + ways.filter((w, i, a) => a.indexOf(w) === i).join(' ');
   }],
   [/是否要求提前还款|提前还款/, (t) => (/提前还款|加速到期|解除合同/.test(t) ? '是' : '')],
   [/是否主张担保权利/, (t) => (/担保|抵押|质押|保证|优先受偿/.test(t) ? '是' : '')],
@@ -4523,10 +4522,13 @@ function fillLayoutContent(label, content, data, elements) {
   let value = elemVal || factVal || claimsVal || genericVal;
   const valueSrc = elemVal ? 'elem' : factVal ? 'fact' : claimsVal ? 'claims' : genericVal ? 'generic' : '';
   const valueSrcLabel = factHit ? factHit.label : (claimHit ? claimHit.label : (genHit ? genHit.label : ''));
-  // “是否接受电子送达”：只认素材里明确写了的（接受/同意＋方式，或明确不接受）。
-  // 素材没写就留空——不采信模型自己勾的"是"（模型常因为当事人有手机号就勾"是"、甚至填个邮箱占位）。
+  // “是否接受电子送达”：默认"是☑＋短信☑"（当事人定的规则）；素材明确说不接受 → 否；
+  // 复核框里人工明确改过的（带有勾选符号和方式/否）按人工的来，其余一律用默认值。
+  let serviceManual = false;   // 人工改过 → 不再叠加默认值，避免"是☑ 否☑"同时被勾
   if (/是否接受电子送达|接受电子送达/.test(n)) {
-    value = elemDefaultForRow(label, data);
+    const deliberate = /[☑✓√]/.test(value) && (/短信|微信|传真|邮箱/.test(value) || /否/.test(value));
+    if (deliberate) serviceManual = true;
+    else value = elemDefaultForRow(label, data);
   }
   // “是否催促过履行”行：素材里没有“催”的事实就不要把交货日期等塞进催促时间
   if (value && /催促|催告/.test(n) && !/催/.test(value)) value = '';
@@ -4543,9 +4545,11 @@ function fillLayoutContent(label, content, data, elements) {
     };
     const mode = String(data.mode || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
     const own = (mode === 'answer' ? (data.defendant || {}) : (data.plaintiff || {}));
+    // 默认取本方当事人的"户籍地址（住所地）"、姓名、电话；模型/复核框已经写了的槽不覆盖
     t = fillCellIfEmpty(t, '地址', grab('地址') || own.addr || own.liveAddr || '');
     t = fillCellIfEmpty(t, '收件人', grab('收件人') || own.name || '');
     t = fillCellIfEmpty(t, '电话', grab('电话') || own.phone || '');
+    // 打了"电子送达＝否"的当事人，地址行也要有内容；若户籍地/电话确实没填，保持空槽由当事人补
     value = '';
   }
   if (value && !ownFilled) {
@@ -4556,7 +4560,7 @@ function fillLayoutContent(label, content, data, elements) {
     const applied = elemApplyRowValue(t, value, label, { src: valueSrc, label: label, srcLabel: valueSrcLabel });
     if (applied && applied.trim() !== t.trim()) t = applied;
   }
-  const def = elemDefaultForRow(label, data);
+  const def = serviceManual ? '' : elemDefaultForRow(label, data);
   if (def) {
     const applied = elemApplyRowValue(t, def, label, { src: 'default', label: label });
     if (applied && applied.trim() !== t.trim()) t = applied;
