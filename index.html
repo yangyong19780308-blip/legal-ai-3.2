@@ -777,14 +777,6 @@ function classifyRateLimit(code, msg) {
 const channelLimitedUntil = {};
 function channelLimited(cp) { return (channelLimitedUntil[cp] || 0) > Date.now(); }
 function markChannelLimited(cp, ms) { channelLimitedUntil[cp] = Date.now() + ms; }
-/* 智谱免费档拥堵（429/1305）时的模型降级链：只换免费模型，避免悄悄走付费通道。
-   想让它兜底到付费模型（glm-4.6 等），把模型名加进这个数组即可。 */
-const ZHIPU_MODEL_CHAIN = ['glm-4.7-flash', 'glm-4.5-flash', 'glm-4-flash'];
-function nextZhipuModel(cur) {
-  const i = ZHIPU_MODEL_CHAIN.indexOf(String(cur || ''));
-  if (i < 0) return '';                       // 用户自己填的模型不在链里 → 不擅自替换
-  return i + 1 < ZHIPU_MODEL_CHAIN.length ? ZHIPU_MODEL_CHAIN[i + 1] : '';
-}
 function providerChain() {
   const primary = state.provider;
   const hasKey = x => !!(state.keys && state.keys[x]) && !!((state.bases && state.bases[x]) || PROVIDERS[x].base);
@@ -829,7 +821,7 @@ async function callLLM(messages, opts) {
 
   const tryProvider = async (cp, pi) => {
     const base = (state.bases && state.bases[cp]) || PROVIDERS[cp].base;
-    let model = (state.models && state.models[cp]) || PROVIDERS[cp].model;
+    const model = (state.models && state.models[cp]) || PROVIDERS[cp].model;
     const key = state.keys && state.keys[cp];
     for (let attempt = 0; ; attempt++) {
       let res = null;
@@ -837,25 +829,16 @@ async function callLLM(messages, opts) {
         const gap = lastCallAt + REQUEST_GAP_MS - Date.now();
         if (gap > 0) await waitAbortable(gap);
         lastCallAt = Date.now();
-        const reqBody = {
-          model: model,
-          messages: messages,
-          temperature: opts.temp != null ? opts.temp : 0.3,
-          max_tokens: opts.maxTokens || 8192,
-          stream: false
-        };
-        // 智谱 GLM 是"思考模型"：默认先吐一大段思维链，正文经常是空的、还慢。实测两组参数不一样：
-        //   glm-4.x（含 4.7-flash）：thinking:{type:'disabled'} 关掉思考；glm-5.x：只认 reasoning_effort: low/high/max
-        //（想保留思考链：控制台 state.zhipuThinking='enabled'）
-        if (cp === 'zhipu') {
-          const zm = String(model || '');
-          if (/^glm-5/i.test(zm)) reqBody.reasoning_effort = state.zhipuReasoningEffort || 'low';
-          else if (state.zhipuThinking !== 'enabled') reqBody.thinking = { type: 'disabled' };
-        }
         res = await fetch(base, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify(reqBody),
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: opts.temp != null ? opts.temp : 0.3,
+            max_tokens: opts.maxTokens || 8192,
+            stream: false
+          }),
           signal: ctrl.signal
         });
       } catch (e) {
@@ -879,19 +862,6 @@ async function callLLM(messages, opts) {
         const rate = classifyRateLimit(code, msg);
         if (res.status === 429 || /(too many requests|rate.?limit|请求过于频繁|输入过于频繁|限流|访问量过大|速率限制|使用上限)/i.test(t)) {
           if (rate === 'balance') { finish(); throw new Error('账户欠费（' + PROVIDERS[cp].label + '）：' + msg.slice(0, 120)); }
-          // 智谱免费档高峰期会整段拥堵（1305"该模型当前访问量过大"）：
-          // 先自动换用同平台其它模型（glm-4.6 → glm-4.5-flash → glm-4-flash），别整条通道直接失败
-          if (cp === 'zhipu') {
-            const next = nextZhipuModel(model);
-            if (next) {
-              toast('「' + model + '」当前拥堵（' + (code || res.status) + '），自动换用 ' + next + ' 重试…');
-              model = next;
-              state.models.zhipu = next;
-              try { saveState(); } catch (e) {}
-              await waitAbortable(1200);
-              continue;
-            }
-          }
           lastRate = lastRate || { type: rate, msg: msg, code: code, provider: cp };
           markChannelLimited(cp, COOLDOWN[rate] || 20000);
           if (rate === 'account' || rate === 'quota') return null;
@@ -923,17 +893,6 @@ async function callLLM(messages, opts) {
       if (!j.choices || !j.choices[0]) {
         const rate = classifyRateLimit(errCode, errMsg);
         if (/使用上限|访问量过大|速率限制|请求过于频繁|限流|限额|1302|1305|1308/.test(errMsg + ' ' + errCode)) {
-          if (cp === 'zhipu') {
-            const next = nextZhipuModel(model);
-            if (next) {
-              toast('「' + model + '」当前拥堵（' + (errCode || '') + '），自动换用 ' + next + ' 重试…');
-              model = next;
-              state.models.zhipu = next;
-              try { saveState(); } catch (e) {}
-              await waitAbortable(1200);
-              continue;
-            }
-          }
           lastRate = lastRate || { type: rate, msg: errMsg, code: errCode, provider: cp };
           markChannelLimited(cp, COOLDOWN[rate] || 20000);
           return null;
@@ -941,9 +900,7 @@ async function callLLM(messages, opts) {
         finish();
         throw new Error('接口返回异常：' + (errMsg || '无有效内容').slice(0, 200));
       }
-      // 正文为空但模型吐了思维链（思考模型 + max_tokens 不够时）→ 用思维链兜底，别给用户一个空白结果
-      const msgObj = (j.choices[0] && j.choices[0].message) || {};
-      const text = (msgObj.content || msgObj.reasoning_content || '').toString();
+      const text = (j.choices[0].message && j.choices[0].message.content) || '';
       const u = j.usage || {};
       const inT = u.prompt_tokens || 0, outT = u.completion_tokens || 0;
       const cost = estCost(cp, inT, outT);
@@ -4107,12 +4064,13 @@ function amounts(s) {
    这些规则不接受"没提到就默认否/无"的猜测。 */
 const ELEM_ROW_DEFAULTS = [
   // 素材明确提到 → 勾"是/有"；没提到 → 不动（留空）
-  /* 电子送达：默认就是"是☑ + 短信☑"（当事人要求，所有含这一行的模板统一如此）；
-     素材明确写"不接受/不同意电子送达"→ 勾"否"；素材另写了方式（微信/传真/邮箱）→ 一并勾上。 */
   [/是否接受电子送达|接受电子送达/, (t) => {
-    if (/(不|暂不|拒绝)(接受|同意|使用)?电子送达|不同意电子送达|不接受电子送达/.test(t)) return '否';
-    const ways = ['短信'].concat(['微信', '传真', '邮箱'].filter(w => t.indexOf(w) >= 0));
-    return '是 ' + ways.filter((w, i, a) => a.indexOf(w) === i).join(' ');
+    if (/(不|暂不|拒绝)(接受|同意|使用)?电子送达|不同意电子送达/.test(t)) return '否';
+    if (/接受电子送达|同意电子送达|同意以电子|电子送达方式|以电子方式送达|电子送达地址/.test(t)) {
+      const ways = ['短信', '微信', '传真', '邮箱'].filter(w => t.indexOf(w) >= 0).join(' ');
+      return ways ? '是 ' + ways : '是';
+    }
+    return '';
   }],
   [/是否要求提前还款|提前还款/, (t) => (/提前还款|加速到期|解除合同/.test(t) ? '是' : '')],
   [/是否主张担保权利/, (t) => (/担保|抵押|质押|保证|优先受偿/.test(t) ? '是' : '')],
@@ -4522,13 +4480,10 @@ function fillLayoutContent(label, content, data, elements) {
   let value = elemVal || factVal || claimsVal || genericVal;
   const valueSrc = elemVal ? 'elem' : factVal ? 'fact' : claimsVal ? 'claims' : genericVal ? 'generic' : '';
   const valueSrcLabel = factHit ? factHit.label : (claimHit ? claimHit.label : (genHit ? genHit.label : ''));
-  // “是否接受电子送达”：默认"是☑＋短信☑"（当事人定的规则）；素材明确说不接受 → 否；
-  // 复核框里人工明确改过的（带有勾选符号和方式/否）按人工的来，其余一律用默认值。
-  let serviceManual = false;   // 人工改过 → 不再叠加默认值，避免"是☑ 否☑"同时被勾
+  // “是否接受电子送达”：只认素材里明确写了的（接受/同意＋方式，或明确不接受）。
+  // 素材没写就留空——不采信模型自己勾的"是"（模型常因为当事人有手机号就勾"是"、甚至填个邮箱占位）。
   if (/是否接受电子送达|接受电子送达/.test(n)) {
-    const deliberate = /[☑✓√]/.test(value) && (/短信|微信|传真|邮箱/.test(value) || /否/.test(value));
-    if (deliberate) serviceManual = true;
-    else value = elemDefaultForRow(label, data);
+    value = elemDefaultForRow(label, data);
   }
   // “是否催促过履行”行：素材里没有“催”的事实就不要把交货日期等塞进催促时间
   if (value && /催促|催告/.test(n) && !/催/.test(value)) value = '';
@@ -4545,11 +4500,9 @@ function fillLayoutContent(label, content, data, elements) {
     };
     const mode = String(data.mode || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
     const own = (mode === 'answer' ? (data.defendant || {}) : (data.plaintiff || {}));
-    // 默认取本方当事人的"户籍地址（住所地）"、姓名、电话；模型/复核框已经写了的槽不覆盖
     t = fillCellIfEmpty(t, '地址', grab('地址') || own.addr || own.liveAddr || '');
     t = fillCellIfEmpty(t, '收件人', grab('收件人') || own.name || '');
     t = fillCellIfEmpty(t, '电话', grab('电话') || own.phone || '');
-    // 打了"电子送达＝否"的当事人，地址行也要有内容；若户籍地/电话确实没填，保持空槽由当事人补
     value = '';
   }
   if (value && !ownFilled) {
@@ -4560,7 +4513,7 @@ function fillLayoutContent(label, content, data, elements) {
     const applied = elemApplyRowValue(t, value, label, { src: valueSrc, label: label, srcLabel: valueSrcLabel });
     if (applied && applied.trim() !== t.trim()) t = applied;
   }
-  const def = serviceManual ? '' : elemDefaultForRow(label, data);
+  const def = elemDefaultForRow(label, data);
   if (def) {
     const applied = elemApplyRowValue(t, def, label, { src: 'default', label: label });
     if (applied && applied.trim() !== t.trim()) t = applied;
