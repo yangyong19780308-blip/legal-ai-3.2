@@ -257,10 +257,10 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
 <!-- ==================== 材料撰写 ==================== -->
 <section id="tab-draft" class="tab">
   <div class="card">
-    <h2>📝 材料撰写 <small>起诉状一律成对生成「要素式＋传统式」两份；强制执行一律要素式</small></h2>
+    <h2>📝 材料撰写 <small>起诉状一律生成官方要素式文书；强制执行、国家赔偿同样要素式</small></h2>
     <label class="fld">① 选择文书类型</label>
     <div class="btnrow" id="draftModeRow">
-      <button class="btn btn-line btn-sm mode-chip active" data-mode="complaint">起诉状（双版）</button>
+      <button class="btn btn-line btn-sm mode-chip active" data-mode="complaint">起诉状（要素式）</button>
       <button class="btn btn-line btn-sm mode-chip" data-mode="answer">答辩状</button>
       <button class="btn btn-line btn-sm mode-chip" data-mode="exec">强制执行（要素式）</button>
       <button class="btn btn-line btn-sm mode-chip" data-mode="petition">信访材料</button>
@@ -294,7 +294,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
 
   <div id="draftElemForm" style="display:none">
     <div class="card">
-      <h2>⑤ 要素采集表单 <small id="elemFormSub">起诉状双版引擎：AI 已自动提取要素，可修改后一键生成「要素式＋传统式」</small></h2>
+      <h2>⑤ 要素采集表单 <small id="elemFormSub">要素式引擎：AI 已自动提取要素，可修改后一键生成官方要素式文书</small></h2>
       <div id="elemMissing" class="warn-box" style="display:none"></div>
       <div class="grid2">
         <div>
@@ -378,7 +378,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
       <label class="fld">受理法院</label>
       <input type="text" id="elemCourt" placeholder="如：涡阳县人民法院">
       <div class="btnrow">
-        <button class="btn btn-gold" id="btnElemGen" onclick="genDraftFromElemForm()">✍️ 生成双版文书（要素式＋传统式）</button>
+        <button class="btn btn-gold" id="btnElemGen" onclick="genDraftFromElemForm()">✍️ 生成要素式文书</button>
         <button class="btn btn-line btn-sm" onclick="extractAndFill()">🔄 重新提取要素</button>
       </div>
     </div>
@@ -391,8 +391,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
       <div class="doc-body" id="docBody"></div>
       <div class="btnrow">
         <button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>
-        <button class="btn btn-gold" onclick="exportDoc()">📥 导出 Word</button>
-        <button class="btn btn-gold" onclick="exportBothDocs()">📥 导出两份 Word</button>
+        <button class="btn btn-gold" onclick="exportDocx()">📥 导出 Word（.docx）</button>
         <button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>
         <button class="btn btn-line" onclick="selfCheck()">🔍 AI 自检复核</button>
         <button class="btn btn-ghost" onclick="saveDraftToCase()">💾 存入案件档案</button>
@@ -441,7 +440,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
   <div class="card">
     <h2>🗺 民事诉讼一审流程 <small>常见路径，具体以法院通知为准</small></h2>
     <ol class="steps">
-      <li data-n="1"><b>起诉与立案</b><span>准备起诉状（双版）、证据清单与证据副本、身份证明 → 到有管辖权的法院立案（或网上立案）。符合条件 7 日内决定是否立案。</span></li>
+      <li data-n="1"><b>起诉与立案</b><span>准备起诉状（要素式）、证据清单与证据副本、身份证明 → 到有管辖权的法院立案（或网上立案）。符合条件 7 日内决定是否立案。</span></li>
       <li data-n="2"><b>送达与答辩期</b><span>法院向被告送达起诉状副本，被告 15 日内提交答辩状（涉外 30 日）。</span></li>
       <li data-n="3"><b>举证与开庭</b><span>按法院指定期限提交证据；开庭前可申请财产保全、调查取证、鉴定等。</span></li>
       <li data-n="4"><b>开庭审理</b><span>法庭调查 → 举证质证 → 法庭辩论 → 最后陈述。小额诉讼/简易程序更快。</span></li>
@@ -563,7 +562,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
 
 <footer class="footer">
   <b>重要提示：</b>本工具由 AI 生成内容，仅供参考，不构成正式法律意见。正式提交前请自行核实，并以受理机关要求为准。<br>
-  已覆盖最高法 67 类要素式示范文本案由；起诉状成对生成「要素式＋传统式」。素材与密钥只在本机浏览器处理，不会上传服务器。
+已覆盖最高法 67 类要素式示范文本案由；起诉状生成官方要素式文书（不再出传统式）。素材与密钥只在本机浏览器处理，不会上传服务器。
 </footer>
 <div class="toast" id="toast"></div>
 
@@ -610,6 +609,11 @@ let caseSearchText = '';
 let curDocText = '';
 let curDocHtml = null;
 let curDocName = '';
+/* 真 .docx 导出所需的整行模型（官方要素表）与落款 */
+let curDocRows = null;
+let curDocSigns = null;
+let curDocData = null;
+let curDocTitle = '';
 
 /* ============ 文书命名：带上当事人称谓与案由（不再只是“法务文书”） ============ */
 function docNaming() {
@@ -1144,7 +1148,7 @@ function saveDraftToCase() {
 
 /* ==================== 材料撰写 ==================== */
 const MODE_NAMES = {
-  complaint: '起诉状（双版）', answer: '答辩状', exec: '强制执行申请书（要素式）',
+  complaint: '起诉状（要素式）', answer: '答辩状', exec: '强制执行申请书（要素式）',
   petition: '信访反映材料', change: '变更诉讼请求申请书', generic: '其他文书'
 };
 function setDraftMode(mode) {
@@ -1188,7 +1192,7 @@ function officialCanMatchForMode(mode, caseType) {
   return !!(dt && findTemplate(dt, n));
 }
 
-// complaint 走既有双版；exec 需要官方目标；answer 仅在已选官方行政答辩状时进入要素表流程
+// complaint 走官方要素表；exec 需要官方目标；answer 仅在已选官方行政答辩状时进入要素表流程
 function elemFlowEligible(mode, selCaseType) {
   if (mode === 'complaint') return true;
   if (mode === 'answer') return true; // 答辩状已按案由挂接官方版式（民事/行政/刑事自诉/国家赔偿四类）
@@ -1203,11 +1207,11 @@ function elemFlowEligible(mode, selCaseType) {
 const ELEM_UI_LABELS = {
   complaint: {
     type: '② 案由（起诉状/答辩状/其他文书选填，AI 也会自动识别）',
-    sub: '起诉状双版引擎：AI 已自动提取要素，可修改后一键生成「要素式＋传统式」',
+    sub: '要素式引擎：AI 已自动提取要素，可修改后一键生成官方要素式文书',
     p: '👤 原告', d: '👥 被告',
     claims: '诉讼请求（每行一项）',
     ev: '证据清单（每行一项：名称｜来源/形式｜证明目的）',
-    btn: '✍️ 生成双版文书（要素式＋传统式）'
+    btn: '✍️ 生成要素式文书'
   },
   exec: {
     type: '② 执行/申请类型（强制执行/参与分配/执行异议等，AI 也会识别）',
@@ -1403,10 +1407,9 @@ function draftPrompt(mode) {
   const material = currentDraft.material;
   const caseType = $('caseTypeSel').value || currentDraft.caseType || '';
   if (mode === 'complaint') {
-    return '请根据素材生成起诉状，一案两份、内容一致：\n' +
-      '第一份以“【要素式】' + (caseType || '民事起诉状') + '”为标题：按最高法要素式示范文本结构——当事人信息、诉讼请求和依据、事实和理由、证据清单、此致XX人民法院。\n' +
-      '第二份以“【传统式】民事起诉状”为标题：完整叙述式——标题、当事人、诉讼请求、事实与理由、证据清单、此致。\n' +
-      '两份之间用单独一行“=====要素式完毕=====”分隔。案由（如有）：' + (caseType || '由你判断') + '。\n素材：\n' + material;
+    return '请根据素材生成起诉状，只要一份要素式：\n' +
+      '以“【要素式】' + (caseType || '民事起诉状') + '”为标题：按最高法要素式示范文本结构——当事人信息、诉讼请求和依据、事实和理由、证据清单、此致XX人民法院。\n' +
+      '案由（如有）：' + (caseType || '由你判断') + '。\n素材：\n' + material;
   }
   if (mode === 'exec') {
     return '请根据下面的判决书/调解书/裁定书或执行素材，生成《强制执行申请书（要素式）》，按最高法要素式示范文本：申请执行人、被执行人、执行依据（案号、作出机关、生效日期）、申请执行事项（本金、利息、费用等金额明确）、事实与理由、此致XX人民法院、附件提示。缺失信息写（待补充）。\n素材：\n' + material;
@@ -1473,18 +1476,12 @@ function splitDocs(text, mode) {
   if (mode === 'complaint') {
     const parts = text.split('=====要素式完毕=====');
     if (parts.length >= 2) {
-      return [
-        { name: '要素式起诉状', text: parts[0].trim() },
-        { name: '传统式起诉状', text: parts.slice(1).join(' ').trim() }
-      ];
+      return [{ name: '要素式起诉状', text: parts[0].trim() }];
     }
     const m = text.match(/(【传统式】[^]*)/);
     if (m) {
       const idx = text.indexOf(m[1]);
-      return [
-        { name: '要素式起诉状', text: text.slice(0, idx).trim() },
-        { name: '传统式起诉状', text: m[1].trim() }
-      ];
+      return [{ name: '要素式起诉状', text: text.slice(0, idx).trim() }];
     }
     return [{ name: MODE_NAMES[mode], text: text.trim() }];
   }
@@ -1507,6 +1504,10 @@ function renderDraftDocs(docs) {
       curDocHtml = null;
     }
     curDocName = docFileName(d, '');
+    curDocRows = d.rows || null;
+    curDocSigns = d.signs || null;
+    curDocData = d.data || null;
+    curDocTitle = d.title || '';
     $('selfCheckArea').innerHTML = '';
   };
   docs.forEach((d, i) => {
@@ -2262,7 +2263,7 @@ async function runExtractFill() {
   fillElemForm(obj);
   $('draftPrepText').innerHTML = (prevHtml && prevHtml.indexOf('loading') < 0)
     ? prevHtml
-    : '<div class="ok-box">要素提取完成，请在下方表单核对、修改，再点「' + (mode === 'complaint' ? '生成双版文书' : '生成文书') + '」。</div>';
+      : '<div class="ok-box">要素提取完成，请在下方表单核对、修改，再点「' + (mode === 'complaint' ? '生成要素式文书' : '生成文书') + '」。</div>';
   const issues = checkMaterialCompleteness(material);
   if (issues.length) {
     const mbox = $('elemMissing');
@@ -2313,7 +2314,7 @@ async function genDualComplaint() {
     const key = data.key;
     const title = elemTitleOf(key, data.caseType);
     $('draftPrep').style.display = '';
-    $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在生成要素式（本地模板）＋传统式（AI）双版文书…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
+    $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在按官方要素式示范文本生成文书…<button class="cancel-btn" onclick="cancelCurrentRequest()">取消</button></span>';
     const elemText = buildElemTextLines({
       title: title,
       pName: data.plaintiff.name, pGender: data.plaintiff.gender, pBirth: data.plaintiff.birth,
@@ -2327,16 +2328,11 @@ async function genDualComplaint() {
       serviceAddr: data.plaintiff.addr, servicePhone: data.plaintiff.phone
     }).join('\n');
     const official = buildOfficialElemDoc(data);
-    const r = await callLLM([
-      { role: 'system', content: SYS },
-      { role: 'user', content: buildTradPrompt(data) }
-    ], { temp: 0.3, maxTokens: 6000, note: '生成·传统式起诉状' });
-    const tradText = stripMarkdown(r.text);
+    /* 2026-09-24 用户决定：出品只要素式，不再生成传统式（同时省掉一次 AI 调用） */
     const docs = [
       official
-        ? { name: '要素式起诉状（官方模板）', html: official.html, text: official.text }
-        : { name: '要素式起诉状', text: elemText },
-      { name: '传统式起诉状', text: tradText, html: tradTextToHtml(tradText) }
+        ? { name: '要素式起诉状（官方模板）', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }
+        : { name: '要素式起诉状', text: elemText }
     ];
     currentDraft.docs = docs;
     // v3.3：记录生成快照与 AI 元数据，供存入 Document 时使用
@@ -2382,7 +2378,7 @@ async function genOfficialElemDoc() {
     if (!official) { toast('该案由暂无官方要素表模板，请核对案由后重试'); return; }
     $('draftPrep').style.display = '';
     $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在按官方示范文本生成要素表…</span>';
-    const docs = [{ name: official.title || data.caseType || '官方要素表文书', html: official.html, text: official.text }];
+    const docs = [{ name: official.title || data.caseType || '官方要素表文书', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }];
     currentDraft.docs = docs;
     const basisFact = (data.facts || []).find(f => elemNormKey(f.label).indexOf('依据') >= 0);
     const totalFact = (data.facts || []).find(f => elemNormKey(f.label).indexOf('标的总额') >= 0);
@@ -2429,7 +2425,7 @@ function exportTextDoc(fileName, text, title) {
 function wordHtmlShell(inner, title) {
   const css = "@page{size:A4;margin:1.5cm 2.5cm 1.8cm 2cm;}"
     + "body{font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;line-height:1.5;}"
-    + "table.elem-official{width:100%;border-collapse:collapse;font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;table-layout:fixed;}"
+    + "table.elem-official{width:100%;border:0.5pt solid #000;border-collapse:collapse;font-family:仿宋,FangSong,SimSun,serif;font-size:10.5pt;table-layout:fixed;mso-table-lspace:0pt;mso-table-rspace:0pt;mso-border-alt:solid windowtext .5pt;}"
     + "table.elem-official col.col-lab{width:24.3%;}table.elem-official col.col-val{width:75.7%;}"
     + "table.elem-official th,table.elem-official td{border:0.5pt solid #000;padding:2px 4px;vertical-align:top;text-align:left;word-wrap:break-word;}"
     + "table.elem-official tr.sec th{background:#fff;text-align:center;font-size:15pt;font-weight:400;font-family:'方正小标宋_GBK',宋体,SimSun,serif;}"
@@ -2463,27 +2459,35 @@ function exportHtmlDoc(fileName, inner, title) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 
+/* ---------- 真 .docx 导出 ----------
+ * 以前导出的是"HTML 换 .doc 后缀"，WPS/Word 会提示"文件格式与扩展名不符"，
+ * 表格外框、字号都会走样。这里改成产出真正的 OOXML（PK 开头的 .docx）。 */
+function docxSaveBlob(fileName, doc, titleText) {
+  const blob = docxBlobForDoc(doc || {}, titleText || String(curDocName || '').replace(/_\d{8}$/, '').replace(/_/g, '·'));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function exportDocx() {
+  const stamp = today().replace(/[年月日]/g, '');
+  if (!curDocText && !(curDocRows && curDocRows.length)) { toast('没有可导出的内容'); return; }
+  const doc = { rows: curDocRows, signs: curDocSigns, data: curDocData, title: curDocTitle, text: curDocText, name: curDocName };
+  docxSaveBlob(String(curDocName || '法律文书').replace(/_\d{8}$/, '') + '_' + stamp + '.docx', doc, null);
+  toast('已导出 Word（.docx，真格式）');
+}
 function exportBothDocs() {
   const stamp = today().replace(/[年月日]/g, '');
   if (!currentDraft.docs || !currentDraft.docs.length) { toast('请先生成文书'); return; }
-  if (currentDraft.docs.length < 2) {
-    const d = currentDraft.docs[0];
-    const fname = docFileName(d, stamp);
-    const t0 = docFileName(d, '').replace(/_/g, '·');
-    if (d.html) exportHtmlDoc(fname + '.doc', d.html, t0);
-    else exportTextDoc(fname + '.doc', d.text, t0);
-    toast('已导出 Word');
-    return;
-  }
-  const [elem, trad] = currentDraft.docs;
   const titleOf = d => docFileName(d, '').replace(/_/g, '·');
-  if (elem.html) exportHtmlDoc(docFileName(elem, stamp) + '.doc', elem.html, titleOf(elem));
-  else exportTextDoc(docFileName(elem, stamp) + '.doc', elem.text, titleOf(elem));
-  setTimeout(() => {
-    if (trad && trad.html) exportHtmlDoc(docFileName(trad, stamp) + '.doc', trad.html, titleOf(trad));
-    else exportTextDoc(docFileName(trad, stamp) + '.doc', trad ? trad.text : '', titleOf(trad));
-  }, 400);
-  toast('已导出两份 Word');
+  currentDraft.docs.forEach((d, i) => {
+    setTimeout(() => {
+      docxSaveBlob(docFileName(d, stamp) + '.docx', d, titleOf(d));
+    }, i * 400);
+  });
+  toast('已导出 ' + currentDraft.docs.length + ' 份 Word（.docx）');
 }
 
 // 官方要素式示范文本模板（解析自《部分案件起诉状答辩状示范文本》法〔2025〕82号 官方 PDF 提取全文，2025-07-14 全面推广版）
@@ -2967,7 +2971,7 @@ function showDocResult(el, title, text) {
     '<div class="doc-body">' + escHtml(text) + '</div>' +
     '<div class="btnrow">' +
     '<button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>' +
-    '<button class="btn btn-gold" onclick="exportDoc()">📥 导出 Word</button>' +
+    '<button class="btn btn-gold" onclick="exportDocx()">📥 导出 Word（.docx）</button>' +
     '<button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>' +
     '</div></div>';
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2975,40 +2979,40 @@ function showDocResult(el, title, text) {
 
 /* ==================== 基层治理场景 ==================== */
 const GOVERN = [
-  { id: 'zhai', ic: '🏠', name: '宅基地纠纷', out: '民事起诉状（双版）',
+  { id: 'zhai', ic: '🏠', name: '宅基地纠纷', out: '民事起诉状（要素式）',
     fields: [
       { k: 'party', label: '当事人信息（双方姓名、身份、住址）' },
       { k: 'land', label: '宅基地位置、面积、权属情况' },
       { k: 'facts', label: '纠纷经过（谁、何时、何事）' },
       { k: 'claim', label: '诉求' }
     ] },
-  { id: 'chengbao', ic: '🌾', name: '土地承包纠纷', out: '民事起诉状（双版）',
+  { id: 'chengbao', ic: '🌾', name: '土地承包纠纷', out: '民事起诉状（要素式）',
     fields: [
       { k: 'party', label: '当事人信息' },
       { k: 'land', label: '承包地位置、面积、承包期限' },
       { k: 'facts', label: '纠纷经过（流转、征收、权属等）' },
       { k: 'claim', label: '诉求' }
     ] },
-  { id: 'linli', ic: '🏡', name: '邻里纠纷', out: '民事起诉状（双版）',
+  { id: 'linli', ic: '🏡', name: '邻里纠纷', out: '民事起诉状（要素式）',
     fields: [
       { k: 'party', label: '当事人信息' },
       { k: 'facts', label: '纠纷经过（通行/排水/噪音/采光等）' },
       { k: 'claim', label: '诉求' }
     ] },
-  { id: 'shanyang', ic: '👵', name: '赡养纠纷', out: '民事起诉状（双版）',
+  { id: 'shanyang', ic: '👵', name: '赡养纠纷', out: '民事起诉状（要素式）',
     fields: [
       { k: 'old', label: '老人信息（姓名、年龄、住址）' },
       { k: 'child', label: '子女信息（各子女姓名、住址、赡养情况）' },
       { k: 'facts', label: '不赡养的事实经过' },
       { k: 'claim', label: '诉求（赡养费标准、方式等）' }
     ] },
-  { id: 'caili', ic: '💍', name: '彩礼返还纠纷', out: '民事起诉状（双版）',
+  { id: 'caili', ic: '💍', name: '彩礼返还纠纷', out: '民事起诉状（要素式）',
     fields: [
       { k: 'party', label: '当事人信息' },
       { k: 'facts', label: '订婚/结婚、彩礼金额与支付方式、现状' },
       { k: 'claim', label: '诉求' }
     ] },
-  { id: 'qianxin', ic: '💼', name: '农民工欠薪', out: '民事起诉状（双版）＋仲裁提示',
+  { id: 'qianxin', ic: '💼', name: '农民工欠薪', out: '民事起诉状（要素式）＋仲裁提示',
     fields: [
       { k: 'worker', label: '务工人员信息（姓名、工种）' },
       { k: 'boss', label: '欠薪方信息（单位/包工头）' },
@@ -3083,7 +3087,7 @@ async function governRun() {
       ], { temp: 0.3, note: '基层治理·' + currentGovern.name });
       docs = [{ name: currentGovern.name + '·成稿', text: r.text.trim() }];
     } else {
-      // 起诉状类场景：双引擎——AI 提取结构化要素，要素式本地生成，传统式 AI 独立生成
+      // 起诉状类场景：AI 提取结构化要素 → 官方要素表本地生成（2026-09-24 起不再生成传统式）
       const obj = await extractGovernElements(desc, currentGovern.name);
       const caseType = obj.caseType || currentGovern.name;
       const key = elemKeyOf(caseType);
@@ -3117,14 +3121,11 @@ async function governRun() {
         court: data.court || '（待补充）', signerName: data.signerName, signDate: data.signDate,
         serviceAddr: p.addr, servicePhone: p.phone
       }).join('\n');
-      r = await callLLM([
-        { role: 'system', content: SYS },
-        { role: 'user', content: buildTradPrompt(data) }
-      ], { temp: 0.3, maxTokens: 6000, note: '基层治理·' + currentGovern.name });
-      const tradText = stripMarkdown(r.text);
+      const official = buildOfficialElemDoc(data);
       docs = [
-        { name: '要素式起诉状', text: elemText },
-        { name: '传统式起诉状', text: tradText }
+        official
+          ? { name: '要素式起诉状（官方模板）', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }
+          : { name: '要素式起诉状', text: elemText }
       ];
     }
     hideLoading();
@@ -3371,7 +3372,8 @@ function elemIsCompany(name, party) {
 function fillOfficialRows(tpl, data) {
   const p = data.plaintiff || {};
   const d = data.defendant || {};
-  const hasEvidSection = tpl.rows.some(r => r[0] === 'h' && elemNormKey(r[1]).includes('证据清单'));
+  const rows = elemStripMediationPlain(tpl.rows);   /* 出品不要调解段（用户 2026-09-24） */
+  const hasEvidSection = rows.some(r => r[0] === 'h' && elemNormKey(r[1]).includes('证据清单'));
   const basis = (data.facts || []).find(f => elemNormKey(f.label).includes('依据'));
   const total = (data.facts || []).find(f => elemNormKey(f.label).includes('标的总额'));
   const injFacts = (data.facts || []).filter(f => {
@@ -3427,7 +3429,7 @@ function fillOfficialRows(tpl, data) {
     if (D.some(w => n === w)) return 'D';
     return '';
   };
-  for (const raw of tpl.rows) {
+  for (const raw of rows) {
     const r = raw.slice();
     const type = r[0];
     const text = r[1];
@@ -3489,21 +3491,28 @@ function fillOfficialRows(tpl, data) {
 }
 
 function rowsToHtml(title, rows) {
-  let h = '<div class="elem-official-wrap"><div class="elem-official-title">' + escHtml(title) + '</div><table class="elem-official"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
+  // 外框必须写在 <table> 上（内联 + border 属性）：Word/WPS 对类选择器不可靠，
+  // 只靠 td 的类样式会出现"整张表没有外框"。
+  const TD = 'border:0.5pt solid #000;padding:2px 4px;vertical-align:top;font-size:10.5pt;font-family:仿宋,FangSong,SimSun,serif;';
+  const SEC = 'border:0.5pt solid #000;padding:4px;text-align:center;font-size:15pt;font-weight:400;font-family:方正小标宋_GBK,宋体,SimSun,serif;';
+  let h = '<div class="elem-official-wrap"><div class="elem-official-title" style="text-align:center;font-size:22pt;font-weight:700;font-family:方正大标宋_GBK,宋体,SimSun,serif;">'
+    + escHtml(title)
+    + '</div><table class="elem-official" border="1" cellspacing="0" cellpadding="0" style="width:100%;border:0.5pt solid #000;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
   for (const r of rows) {
     const t = r[0], v = r[1];
-    if (t === 'h') h += '<tr class="sec"><th colspan="2">' + escHtml(v) + '</th></tr>';
-    else if (t === 'h2') h += '<tr class="sec2"><th colspan="2">' + escHtml(v) + '</th></tr>';
-    else if (t === 'sub') h += '<tr class="sub"><td colspan="2">' + escHtml(v) + '</td></tr>';
+    if (t === 'h') h += '<tr class="sec"><th colspan="2" style="' + SEC + '">' + escHtml(v) + '</th></tr>';
+    else if (t === 'h2') h += '<tr class="sec2"><th colspan="2" style="' + TD + 'text-align:left;">' + escHtml(v) + '</th></tr>';
+    else if (t === 'sub') h += '<tr class="sub"><td colspan="2" style="' + TD + 'color:#333;">' + escHtml(v) + '</td></tr>';
     else if (t === 'f') {
       const i = v.lastIndexOf('：');
       const lab = i > 0 ? v.slice(0, i + 1) : v;
       const val = i > 0 ? v.slice(i + 1) : '';
-      h += '<tr><td class="lab">' + escHtml(lab) + '</td><td class="val">' + escHtml(val) + '</td></tr>';
+      h += '<tr><td class="lab" style="' + TD + 'text-align:center;vertical-align:middle;">' + escHtml(lab) + '</td>'
+        + '<td class="val" style="' + TD + 'line-height:1.6;">' + escHtml(val) + '</td></tr>';
     } else if (t === 'o') {
-      h += '<tr class="opt"><td colspan="2">' + escHtml(v) + '</td></tr>';
+      h += '<tr class="opt"><td colspan="2" style="' + TD + '">' + escHtml(v) + '</td></tr>';
     } else {
-      h += '<tr class="para"><td colspan="2">' + escHtml(v) + '</td></tr>';
+      h += '<tr class="para"><td colspan="2" style="' + TD + '">' + escHtml(v) + '</td></tr>';
     }
   }
   h += '</table></div>';
@@ -3749,11 +3758,48 @@ function layoutMatchFor(caseType, docType) {
   }
   if (!hit) return null;
   hit.rows = elemAppendServiceRow(hit.rows, docType);
+  hit.rows = elemStripMediation(hit.rows);   /* 出品不要调解段（用户 2026-09-24） */
   return hit;
+}
+/* 出品不要"调解"那一段（用户 2026-09-24 决定）：
+   官方模板末尾的「对纠纷解决方式的意愿 / 是否了解（先行）调解 / 是否考虑先行调解 / 是否同意调解」
+   整段去掉。注意只认"行标签"，不能按整行文本匹配——说明块里也提到"调解书"，误删会毁掉说明区。 */
+function elemIsMediationRow(row) {
+  const k = row[0];
+  if (k === 'r') {
+    const n = elemNormKey(row[1] || '');
+    return n.indexOf('调解') >= 0 && n.length <= 40 && /^(是否|有无|关于)/.test(n);
+  }
+  if (k === 's') {
+    const n = elemNormKey(row[1] || '');
+    return n === '对纠纷解决方式的意愿' || (n.indexOf('调解') >= 0 && n.length <= 12);
+  }
+  return false;
+}
+function elemStripMediation(rows) {
+  if (!rows || !rows.length) return rows;
+  return rows.filter(r => !elemIsMediationRow(r));
+}
+/* 兜底模板（official_templates.js 的 h/p/o/f 行模型）：丢掉「对纠纷解决方式的意愿」整段 */
+function elemStripMediationPlain(rows) {
+  if (!rows || !rows.length) return rows;
+  const out = [];
+  let skip = false;
+  rows.forEach(r => {
+    const t = r[0], v = String(r[1] || '');
+    if (t === 'h' || t === 'h2') {
+      const n = elemNormKey(v);
+      skip = n === '对纠纷解决方式的意愿' || (n.indexOf('调解') >= 0 && n.length <= 12);
+      if (skip) return;
+    }
+    if (skip) return;
+    out.push(r);
+  });
+  return out;
 }
 function layoutRowsFor(caseType, docType) {
   const m = layoutMatchFor(caseType, docType);
-  return m ? m.rows : null;
+  return m ? elemStripMediation(m.rows) : null;
 }
 /* ==================== 官方要素行 → 内容映射 ====================
    三级来源，逐级兜底：
@@ -4581,7 +4627,7 @@ function elemModeDocType(caseType, mode) {
 function elemLayoutFor(caseType, docType) {
   const dt = docType || elemModeDocType(caseType);
   const m = layoutMatchFor(caseType, dt);
-  return m ? m.rows : null;
+  return m ? elemStripMediation(m.rows) : null;
 }
 function elemOfficialRowList(caseType, docType) {
   const layout = elemLayoutFor(caseType, docType);
@@ -4704,7 +4750,7 @@ function layoutRowsToHtml(title, rows, data) {
   let h = '<div class="elem-official-wrap"><div class="elem-official-title" style="text-align:center;font-size:22pt;font-weight:700;font-family:方正大标宋_GBK,宋体,SimSun,serif;">'
     + escBr(tp[0])
     + (tp[1] ? '<br><span class="elem-official-sub" style="display:inline-block;font-size:16pt;font-weight:400;font-family:方正小标宋_GBK,宋体,SimSun,serif;">' + escBr(tp[1]) + '</span>' : '')
-    + '</div><table class="elem-official"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
+    + '</div><table class="elem-official" border="1" cellspacing="0" cellpadding="0" style="width:100%;border:0.5pt solid #000;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;"><colgroup><col class="col-lab"><col class="col-val"></colgroup>';
   let signParts = [];
   for (const r of rows) {
     const k = r[0];
@@ -4769,7 +4815,10 @@ function buildOfficialElemDoc(data) {
       title: title,
       key: (hit && hit.key) || data.caseType || null,
       docType: docType || null,
-      canonicalKey: (hit && hit.canonicalKey) || null
+      canonicalKey: (hit && hit.canonicalKey) || null,
+      /* 真 .docx 导出用：整行模型 + 落款，避免再从 HTML 反解 */
+      rows: filled,
+      signs: filled.filter(r => r[0] === 'sign').map(r => r[1] || '')
     };
   }
   if (!hit) return null;
@@ -4784,6 +4833,241 @@ function buildOfficialElemDoc(data) {
     docType: hit.docType || null,
     canonicalKey: hit.canonicalKey || null
   };
+}
+
+/* ==================== 真·Word（.docx）导出：OOXML + 极简 ZIP(store) ====================
+ * 为什么不用"HTML 换 .doc 后缀"：WPS/Word 会判"文件格式与扩展名不符"，表格外框、字号都不可靠。
+ * 这里直接产出 OOXML（PK 开头的真 docx），WPS 与 Word 都当真正的文档打开。
+ * 版式对齐官方：栏宽 24.3%∶75.7%、外框+内线 0.5pt、标题 22pt、副标题 16pt、大项 15pt 居中、正文 10.5pt 仿宋。
+ */
+const DOCX_W_LAB = 2271;    /* 9344 × 24.3% twips */
+const DOCX_W_VAL = 7073;    /* 9344 × 75.7% */
+const DOCX_W_TOTAL = 9344;
+const DOCX_SZ_BODY = 21;    /* 10.5pt = 21 半磅 */
+const DOCX_SZ_SEC = 30;     /* 15pt 小三 */
+const DOCX_SZ_SUB = 32;     /* 16pt */
+const DOCX_SZ_TITLE = 44;   /* 22pt */
+const DOCX_BD = 4;          /* 0.5pt = 4/8 磅 */
+
+const DOCX_CRC_TABLE = (function () {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function docxCrc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = DOCX_CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function docxUtf8(s) { return new TextEncoder().encode(String(s)); }
+
+/* 极简 ZIP：只做 store（不压缩），够 OOXML 用，且不依赖任何外部库 */
+function docxZip(files) {
+  const chunks = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  files.forEach(f => {
+    const name = docxUtf8(f.name), data = f.data, crc = docxCrc32(data);
+    const lh = new Uint8Array(30 + name.length), v = new DataView(lh.buffer);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, 0x0800, true); v.setUint16(8, 0, true);
+    v.setUint16(10, dosTime, true); v.setUint16(12, dosDate, true);
+    v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true);
+    v.setUint16(26, name.length, true); v.setUint16(28, 0, true);
+    lh.set(name, 30);
+    chunks.push(lh, data);
+    const ch = new Uint8Array(46 + name.length), cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true); cv.setUint16(30, 0, true); cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true); cv.setUint16(36, 0, true); cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    ch.set(name, 46);
+    central.push(ch);
+    offset += lh.length + data.length;
+  });
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const eocd = new Uint8Array(22), ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(4, 0, true); ev.setUint16(6, 0, true);
+  ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true); ev.setUint16(20, 0, true);
+  return new Blob(chunks.concat(central, [eocd]),
+    { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+/* ---------- OOXML 片段 ---------- */
+function dx(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function dxRPr(o) {
+  o = o || {};
+  const font = o.font || '仿宋';
+  let s = '<w:rFonts w:ascii="' + dx(font) + '" w:eastAsia="' + dx(font) + '" w:hAnsi="' + dx(font) + '" w:cs="' + dx(font) + '"/>';
+  if (o.bold) s += '<w:b/><w:bCs/>';
+  const sz = o.sz || DOCX_SZ_BODY;
+  s += '<w:sz w:val="' + sz + '"/><w:szCs w:val="' + sz + '"/>';
+  return s;
+}
+function dxRun(text, o) {
+  const parts = String(text == null ? '' : text).split('\n');
+  let r = '';
+  parts.forEach((p, i) => {
+    if (i) r += '<w:br/>';
+    r += '<w:t xml:space="preserve">' + dx(p) + '</w:t>';
+  });
+  return '<w:r><w:rPr>' + dxRPr(o) + '</w:rPr>' + r + '</w:r>';
+}
+function dxPara(text, o) {
+  o = o || {};
+  let p = '<w:p><w:pPr>';
+  if (o.align) p += '<w:jc w:val="' + o.align + '"/>';
+  p += '<w:spacing w:before="0" w:after="0" w:line="' + (o.line || 240) + '" w:lineRule="auto"/>';
+  if (o.indentChars) p += '<w:ind w:firstLineChars="' + o.indentChars + '"/>';
+  p += '<w:rPr>' + dxRPr(o) + '</w:rPr></w:pPr>';
+  if (text !== '' && text != null) p += dxRun(text, o);
+  return p + '</w:p>';
+}
+function dxTextParas(text, o) {
+  const lines = String(text == null ? '' : text).split('\n');
+  const out = lines.map(l => dxPara(l, o));
+  return out.length ? out : [dxPara('', o)];
+}
+function dxCell(paras, o) {
+  o = o || {};
+  let tc = '<w:tc><w:tcPr><w:tcW w:w="' + (o.w || DOCX_W_VAL) + '" w:type="dxa"/>';
+  if (o.span) tc += '<w:gridSpan w:val="' + o.span + '"/>';
+  if (o.vAlign) tc += '<w:vAlign w:val="' + o.vAlign + '"/>';
+  tc += '</w:tcPr>' + ((paras && paras.length) ? paras.join('') : dxPara('')) + '</w:tc>';
+  return tc;
+}
+/* 外框与内线都写在表级：这样四条外边一定在（曾出现"整张表没有外框"） */
+function dxTblBorders() {
+  const b = 'w:val="single" w:sz="' + DOCX_BD + '" w:space="0" w:color="000000"';
+  return '<w:tblBorders><w:top ' + b + '/><w:left ' + b + '/><w:bottom ' + b + '/><w:right ' + b + '/>'
+    + '<w:insideH ' + b + '/><w:insideV ' + b + '/></w:tblBorders>';
+}
+function docxNoteParas(text) {
+  const raw = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const paras = [];
+  let cur = '';
+  const startsNew = /^(★|（\d+[.．、]|\d+[.．、]|说明[：:])/;
+  raw.forEach(ln => {
+    if (/^★.+★$/.test(ln) || /^说明[：:]$/.test(ln)) { if (cur) paras.push(cur); paras.push(ln); cur = ''; return; }
+    if (!cur) { cur = ln; return; }
+    if (startsNew.test(ln)) { paras.push(cur); cur = ln; return; }
+    cur += ln;
+  });
+  if (cur) paras.push(cur);
+  return paras.map((p, i) => /^★.+★$/.test(p)
+    ? dxPara(p, { sz: DOCX_SZ_BODY, bold: true, align: 'center', font: '方正黑体_GBK' })
+    : dxPara(p, { sz: DOCX_SZ_BODY, align: 'both', font: '方正黑体_GBK', indentChars: i === 0 ? 0 : 200 }));
+}
+
+/* ---------- 文档主体 ---------- */
+function docxTableBodyXml(title, rows, signs, data) {
+  const tp = (typeof splitOfficialTitle === 'function') ? splitOfficialTitle(title) : [String(title || ''), ''];
+  let x = dxPara(tp[0], { sz: DOCX_SZ_TITLE, bold: true, font: '方正大标宋_GBK', align: 'center' });
+  if (tp[1]) x += dxPara(tp[1], { sz: DOCX_SZ_SUB, font: '方正小标宋_GBK', align: 'center' });
+  let trs = '';
+  (rows || []).forEach(r => {
+    const k = r[0];
+    if (k === 's') {
+      const text = String(r[1] || '');
+      const n = (typeof elemNormKey === 'function') ? elemNormKey(text) : text;
+      const isNote = n.indexOf('说明') >= 0 || text.indexOf('★') >= 0;
+      const isNote2 = /可完整表述|可概括描述/.test(n);
+      const isSec = !isNote && !isNote2
+        && (((typeof isLayoutCategoryHeader === 'function') && isLayoutCategoryHeader(text))
+          || (text.replace(/\s/g, '').length <= 20 && !/[。；;]/.test(text)));
+      let paras;
+      if (isNote) paras = docxNoteParas(text);
+      else if (isSec) paras = [dxPara(text.replace(/\s+/g, ' ').trim(), { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center' })];
+      else paras = dxTextParas(text, { sz: DOCX_SZ_BODY });
+      trs += '<w:tr>' + dxCell(paras, { span: 2, w: DOCX_W_TOTAL }) + '</w:tr>';
+    } else if (k === 'r') {
+      trs += '<w:tr>'
+        + dxCell([dxPara(String(r[1] || ''), { align: 'center', sz: DOCX_SZ_BODY })], { w: DOCX_W_LAB, vAlign: 'center' })
+        + dxCell(dxTextParas(String(r[2] || ''), { sz: DOCX_SZ_BODY }), { w: DOCX_W_VAL })
+        + '</w:tr>';
+    }
+  });
+  x += '<w:tbl><w:tblPr><w:tblW w:w="' + DOCX_W_TOTAL + '" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/>'
+    + dxTblBorders()
+    + '<w:tblLayout w:type="fixed"/>'
+    + '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="57" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="57" w:type="dxa"/></w:tblCellMar>'
+    + '</w:tblPr><w:tblGrid><w:gridCol w:w="' + DOCX_W_LAB + '"/><w:gridCol w:w="' + DOCX_W_VAL + '"/></w:tblGrid>'
+    + trs + '</w:tbl>';
+  const signLabel = String((signs && signs[0]) || '具状人（签字、盖章）').replace(/[：:]\s*$/, '').trim() || '具状人（签字、盖章）';
+  const nm = (data && data.signerName) || '';
+  const dt = (data && data.signDate) || '';
+  x += dxPara(signLabel + '：' + nm, { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK' });
+  x += dxPara('日期：' + dt, { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK' });
+  return x;
+}
+function docxTextBodyXml(title, text) {
+  let x = dxPara(String(title || ''), { sz: DOCX_SZ_TITLE, bold: true, font: '方正大标宋_GBK', align: 'center' });
+  String(text || '').split(/\r?\n/).forEach(l => {
+    x += dxPara(l.replace(/\s+$/, ''), { sz: DOCX_SZ_BODY, indentChars: l.trim() ? 200 : 0 });
+  });
+  return x;
+}
+function docxDocXmlFromBody(bodyXml) {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+    + bodyXml
+    + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+    + '<w:pgMar w:top="850" w:right="1417" w:bottom="1021" w:left="1134" w:header="851" w:footer="992" w:gutter="0"/>'
+    + '</w:sectPr></w:body></w:document>';
+}
+const DOCX_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+  + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+  + '<Default Extension="xml" ContentType="application/xml"/>'
+  + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+  + '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+  + '</Types>';
+const DOCX_ROOT_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+  + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+  + '</Relationships>';
+const DOCX_DOC_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+  + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+  + '</Relationships>';
+const DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+  + '<w:docDefaults><w:rPrDefault><w:rPr>'
+  + '<w:rFonts w:ascii="仿宋" w:eastAsia="仿宋" w:hAnsi="仿宋" w:cs="仿宋"/>'
+  + '<w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr></w:rPrDefault>'
+  + '<w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault>'
+  + '</w:docDefaults>'
+  + '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
+  + '</w:styles>';
+
+function docxBuildBlob(bodyXml) {
+  const docXml = docxDocXmlFromBody(bodyXml);
+  return docxZip([
+    { name: '[Content_Types].xml', data: docxUtf8(DOCX_CONTENT_TYPES) },
+    { name: '_rels/.rels', data: docxUtf8(DOCX_ROOT_RELS) },
+    { name: 'word/document.xml', data: docxUtf8(docXml) },
+    { name: 'word/_rels/document.xml.rels', data: docxUtf8(DOCX_DOC_RELS) },
+    { name: 'word/styles.xml', data: docxUtf8(DOCX_STYLES) }
+  ]);
+}
+/* 一个文书对象 → docx Blob（官方要素表走表格，其余走段落） */
+function docxBlobForDoc(doc, titleText) {
+  const title = titleText || (doc && (doc.title || doc.name)) || '法律文书';
+  if (doc && doc.rows && doc.rows.length) {
+    return docxBuildBlob(docxTableBodyXml(doc.title || title, doc.rows, doc.signs, doc.data || {}));
+  }
+  /* 传统式等纯文本文书：正文自带标题行，不再另加标题段落，避免顶部多一行 */
+  return docxBuildBlob(docxTextBodyXml('', (doc && doc.text) || ''));
 }
 
 /* ==================== 案件驾驶舱（第五批：v3 数据可视化工作台） ==================== */
