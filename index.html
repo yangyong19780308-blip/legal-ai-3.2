@@ -1360,12 +1360,16 @@ async function draftAnalyze(force) {
       { role: 'user', content: prompt }
     ], { temp: 0.2, note: '材料分析·' + MODE_NAMES[mode] });
     currentDraft.analysis = r.text;
+    /* 2026-09-24：传统式那次 AI 调用已取消，不能再引用它的返回值 r，
+       否则会抛 ReferenceError → 成稿区永远不渲染（用户看到"出不了文档"）。
+       这里取费用台账里最近一条（即本次要素提取的调用）。 */
+    const lastLedger = (state.ledger && state.ledger[0]) || null;
     currentDraft.lastAiMeta = {
       provider: state.provider,
       model: (state.models && state.models[state.provider]) || '',
       generatedAt: Date.now(),
-      tokens: { in: r.inT || 0, out: r.outT || 0 },
-      cost: r.cost || 0
+      tokens: { in: lastLedger ? lastLedger.in : 0, out: lastLedger ? lastLedger.out : 0 },
+      cost: lastLedger ? lastLedger.cost : 0
     };
     const caseTypeMatch = r.text.match(/案由[：:]\s*(.+)/);
     if (caseTypeMatch && caseTypeMatch[1].replace(/[（(].*?[)）]/g, '').trim().length < 30) {
@@ -2345,12 +2349,16 @@ async function genDualComplaint() {
       basis: basisFact ? basisFact.content : '', total: totalFact ? totalFact.content : '',
       court: data.court, signerName: data.signerName, signDate: data.signDate
     };
+    /* 2026-09-24：传统式那次 AI 调用已取消，不能再引用它的返回值 r，
+       否则抛 ReferenceError → 成稿区永远不渲染（用户看到的"出不了文档"）。
+       改为取费用台账最近一条（即本次要素提取的调用）。 */
+    const lastLedger = (state.ledger && state.ledger[0]) || null;
     currentDraft.lastAiMeta = {
       provider: state.provider,
       model: (state.models && state.models[state.provider]) || '',
       generatedAt: Date.now(),
-      tokens: { in: r.inT || 0, out: r.outT || 0 },
-      cost: r.cost || 0
+      tokens: { in: lastLedger ? lastLedger.in : 0, out: lastLedger ? lastLedger.out : 0 },
+      cost: lastLedger ? lastLedger.cost : 0
     };
     renderDraftDocs(docs);
     $('draftPrep').style.display = 'none';
