@@ -4726,6 +4726,18 @@ function isLayoutCategoryHeader(text) {
     return n === nk || n.indexOf(nk) === 0;
   });
 }
+// 官方有些大项把"填写提示"和大项名排在同一格里（如 买卖合同纠纷 的"诉讼请求"下面跟着两行
+// "（原告为卖方时，填写第1项、第2项；…）"）。官方 PDF 里大项名是小三居中、提示是五号居中，
+// 只是版式提取时并成了一整行，整行就被当成正文渲染（字号没放大、也没居中）。
+// 这里拆成"大项名 + 提示语"两段，交给渲染器分别套用大项与正文字号。
+function splitElemBigHeaderRows(text) {
+  const lines = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const head = lines[0];
+  if (!head || head.length > 20 || /[。；;]/.test(head)) return null;
+  if (!isLayoutCategoryHeader(head)) return null;
+  return { head: head, rest: lines.slice(1).join('\n') };
+}
 function flowNoteText(text) {
   const raw = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   if (!raw.length) return '';
@@ -4771,9 +4783,14 @@ function layoutRowsToHtml(title, rows, data) {
       // 除说明区和"可完整表述…"提示外，20 字以内的整行按大项处理
       const isSection = !isNote && !isNote2
         && (isLayoutCategoryHeader(text) || (text.replace(/\s/g, '').length <= 20 && !/[。；;]/.test(text)));
-      const cls = isNote ? 'note' : (isNote2 ? 'note2' : (isSection ? 'sec-ct' : ''));
-      const body = isNote ? flowNoteText(text) : escBr(text);
-      const style = isSection ? SEC_STYLE : (isNote ? (TD + 'text-align:justify;') : TD);
+      // 大项名与填写提示被并成一整行的（买卖合同纠纷等 5 套的"诉讼请求"）：首行按大项、其余按五号居中
+      const bigHead = (!isSection && !isNote && !isNote2) ? splitElemBigHeaderRows(text) : null;
+      const isBig = isSection || !!bigHead;
+      const cls = isNote ? 'note' : (isNote2 ? 'note2' : (isBig ? 'sec-ct' : ''));
+      const body = isNote ? flowNoteText(text)
+        : (bigHead ? escHtml(bigHead.head) + '<div style="font-size:10.5pt;font-weight:400;text-align:center;font-family:仿宋,FangSong,SimSun,serif;">' + escBr(bigHead.rest) + '</div>'
+          : escBr(text));
+      const style = isBig ? SEC_STYLE : (isNote ? (TD + 'text-align:justify;') : TD);
       h += '<tr class="sec-full ' + cls + '"><td colspan="2" style="' + style + '">' + body + '</td></tr>';
     } else if (k === 'r') {
       h += '<tr><td class="lab" style="' + TD + 'text-align:center;vertical-align:middle;">' + escBr(r[1]) + '</td>'
@@ -4993,9 +5010,14 @@ function docxTableBodyXml(title, rows, signs, data) {
       const isSec = !isNote && !isNote2
         && (((typeof isLayoutCategoryHeader === 'function') && isLayoutCategoryHeader(text))
           || (text.replace(/\s/g, '').length <= 20 && !/[。；;]/.test(text)));
+      // 大项名与填写提示被并成一整行的（买卖合同纠纷等 5 套的"诉讼请求"）：首行 15pt 居中、提示 10.5pt 居中
+      const bigHead = (!isSec && !isNote && !isNote2 && (typeof splitElemBigHeaderRows === 'function'))
+        ? splitElemBigHeaderRows(text) : null;
       let paras;
       if (isNote) paras = docxNoteParas(text);
       else if (isSec) paras = [dxPara(text.replace(/\s+/g, ' ').trim(), { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center' })];
+      else if (bigHead) paras = [dxPara(bigHead.head, { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center' })]
+        .concat(dxTextParas(bigHead.rest, { sz: DOCX_SZ_BODY, align: 'center' }));
       else paras = dxTextParas(text, { sz: DOCX_SZ_BODY });
       trs += '<w:tr>' + dxCell(paras, { span: 2, w: DOCX_W_TOTAL }) + '</w:tr>';
     } else if (k === 'r') {
