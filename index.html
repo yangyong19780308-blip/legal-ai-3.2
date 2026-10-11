@@ -377,6 +377,12 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
       <textarea id="elemOfficialRows" style="min-height:220px" placeholder="AI 会把提取到的信息映射到官方要素表每一行；这里可以直接改，生成时按此填表"></textarea>
       <label class="fld">受理法院</label>
       <input type="text" id="elemCourt" placeholder="如：涡阳县人民法院">
+      <div id="elemExecExtra" style="display:none">
+        <label class="fld">案件案由（执行/申请类填写：被执行的案件是什么案由）</label>
+        <input type="text" id="elemCaseCause" placeholder="如：民间借贷纠纷">
+        <label class="fld">执行依据案号（执行/申请类填写）</label>
+        <input type="text" id="elemBasisCaseNo" placeholder="如：（2025）皖1621民初1234号">
+      </div>
       <div class="btnrow">
         <button class="btn btn-gold" id="btnElemGen" onclick="genDraftFromElemForm()">✍️ 生成要素式文书</button>
         <button class="btn btn-line btn-sm" onclick="extractAndFill()">🔄 重新提取要素</button>
@@ -1287,6 +1293,9 @@ function applyDraftModeLabels(mode) {
   }
   const b = $('btnElemGen');
   if (b) b.textContent = L.btn;
+  /* 执行/申请类独有的两个结构化字段（案件案由 / 执行依据案号）只在该文书类型下显示 */
+  const execExtra = $('elemExecExtra');
+  if (execExtra) execExtra.style.display = (fam === 'exec') ? '' : 'none';
 }
 
 function elemRoleWords(mode, caseType) {
@@ -2069,11 +2078,15 @@ function readElemForm() {
   }
   const genericFacts = val('eff_facts');
   if (genericFacts) facts.push({ label: '', content: genericFacts });
-  const caseType = val('caseTypeSel') || '民事纠纷';
+  /* 案由留空时不要用"民事纠纷"顶替——那也是个没有官方模板的假案由，会出"没有表格/没有外框"的成稿；
+     留空就留空，由 buildOfficialElemDoc 按文书类型阻断并提示（2026-10-11）。 */
+  const caseType = val('caseTypeSel') || String((typeof currentDraft !== 'undefined' && currentDraft && currentDraft.caseType) || '');
   const plName = val('elemPlName');
   return {
     caseType: caseType,
     key: key,
+    caseCause: val('elemCaseCause'),        /* 执行/申请类：被执行的案件是什么案由 */
+    basisCaseNo: val('elemBasisCaseNo'),    /* 执行/申请类：执行依据案号 */
     plaintiff: {
       name: plName, type: val('elemPlType'), gender: val('elemPlGender'), birth: val('elemPlBirth'),
       nation: val('elemPlEthnic'), idNo: val('elemPlId'), addr: val('elemPlAddr'), liveAddr: val('elemPlLive'),
@@ -2112,7 +2125,9 @@ function fillElemForm(obj) {
     set(prefix + 'Ethnic', party.nation); set(prefix + 'Id', party.idNo);
     set(prefix + 'Addr', party.addr || party.liveAddr); set(prefix + 'Live', party.liveAddr);
     set(prefix + 'Phone', party.phone);
-    set(prefix + 'Work', party.workUnit); set(prefix + 'Position', party.position);
+    set(prefix + 'Work', party.workUnit);
+    /* 单位当事人的"职务"是法定代表人的职务（模型常写成 legalRepPosition） */
+    set(prefix + 'Position', party.position || party.legalRepPosition || party.title);
     set(prefix + 'LegalRep', party.legalRep || party.legalPerson); set(prefix + 'Credit', party.creditCode);
     set(prefix + 'Reg', party.regAddr); set(prefix + 'OrgType', party.orgType || party.unitType);
     set(prefix + 'Ownership', party.ownership);
@@ -2124,6 +2139,8 @@ function fillElemForm(obj) {
   set('elemClaims', claims);
   set('elemEvidence', evs);
   set('elemCourt', obj.court || '');
+  set('elemCaseCause', obj.caseCause || '');      /* 执行/申请类：案件案由 */
+  set('elemBasisCaseNo', obj.basisCaseNo || '');  /* 执行/申请类：执行依据案号 */
   const caseType = obj.caseType || '';
   if (caseType) {
     currentDraft.caseType = caseType;
@@ -2213,6 +2230,24 @@ function fillElemForm(obj) {
   $('draftElemForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/* 提取提示词里的案由清单：必须给"该文书类型下官方有的全部案由名"（旧清单只有 12 条，行政仅 4 条，
+   模型只能自造"行政诉讼／行政案件"这类泛称 → 命中不了官方版式 → 出无表格成稿）。2026-10-11 */
+function elemCaseHintNames() {
+  try {
+    const names = (typeof elemOfficialCaseNamesFor === 'function') ? elemOfficialCaseNamesFor('complaint') : [];
+    if (!names.length) return '案由按素材判断最接近的案由。\n';
+    const groups = {};
+    names.forEach(n => {
+      const t = String(((typeof OFFICIAL_TEMPLATES !== 'undefined' && OFFICIAL_TEMPLATES[n]) || {}).t || '其他');
+      (groups[t] = groups[t] || []).push(n);
+    });
+    return '案由请从下面的官方清单里选：\n'
+      + Object.keys(groups).map(t => '·' + t + '（' + groups[t].length + '类）：' + groups[t].join('、')).join('\n') + '\n';
+  } catch (e) {
+    return '案由按素材判断最接近的案由。\n';
+  }
+}
+
 async function runExtractFill() {
   const material = currentDraft.material || $('draftMaterial').value.trim();
   if (!material) { toast('请先粘贴素材'); return; }
@@ -2233,7 +2268,11 @@ async function runExtractFill() {
       ? '案由请从这些中选择：违法刑事拘留赔偿、刑事改判无罪赔偿、怠于履行监管职责致伤致死赔偿、错误执行赔偿。\n'
       : fam === 'answer'
         ? '案由请输出：行政答辩状（通用）。\n'
-        : '案由请优先从这些中选择：民间借贷纠纷、离婚纠纷、买卖合同纠纷、机动车交通事故责任纠纷、金融借款合同纠纷、劳动争议纠纷、物业服务合同纠纷、房屋租赁合同纠纷、建设工程合同纠纷、房屋买卖合同纠纷、信用卡纠纷、政府信息公开、行政复议、行政许可、行政处罚、刑事自诉；其他情况按素材判断最接近的案由。\n';
+        : elemCaseHintNames()
+          /* 案由清单必须是"该文书类型下官方有的全部案由名"。旧清单只有 12 条（行政仅 4 条），
+             模型只好回"行政诉讼／行政强制／不服行政处罚"这类清单外的名字 → 命中不了官方版式，
+             旧逻辑就静默出一份"没有表格、没有外框"的纯文本（2026-10-11 用户第 N 次反馈）。 */
+          + '案由必须从上面的清单里**原样照抄**一个（不要自造"行政诉讼/行政案件/行政纠纷"这类泛称）；素材涉及行政案件时，从"行政起诉状"那一行的案由里选最接近的。\n';
   const claimsNote = fam === 'exec' ? '申请执行事项（写明本金/利息/费用/行为）'
     : fam === 'compensation' ? '赔偿请求（项目与金额）'
       : fam === 'answer' ? '答辩请求'
@@ -2243,8 +2282,14 @@ async function runExtractFill() {
     'JSON 结构：\n' +
     '{\n' +
     '  "caseType": "案由名称",\n' +
-    '  "plaintiff": { "name":"", "gender":"男/女", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"" },\n' +
-    '  "defendant": { "name":"", "gender":"", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"" },\n' +
+    /* 执行/申请类：官方「执行依据信息」块要的"案件案由 / 执行依据案号"必须单独提取，
+       否则「案 由」「文书号」两行没有取数来源（2026-10-11 用户反馈）。 */
+    (fam === 'exec'
+      ? '  "caseCause": "被执行的案件案由（如：民间借贷纠纷；判断不出就空字符串）",\n'
+        + '  "basisCaseNo": "执行依据案号（如：（2025）皖1621民初1234号；素材没有就空字符串）",\n'
+      : '') +
+    '  "plaintiff": { "name":"", "type":"自然人/法人或其他组织", "gender":"男/女", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"", "legalRep":"单位时：法定代表人/负责人", "legalRepPosition":"单位时：法定代表人的职务（如局长、经理）", "creditCode":"单位时：统一社会信用代码", "orgType":"单位时：类型，如有限责任公司" },\n' +
+    '  "defendant": { "name":"", "type":"自然人/法人或其他组织", "gender":"", "birth":"", "nation":"", "idNo":"", "addr":"", "liveAddr":"", "phone":"", "legalRep":"单位时：法定代表人/负责人", "legalRepPosition":"单位时：法定代表人的职务（如局长、经理）", "creditCode":"单位时：统一社会信用代码", "orgType":"单位时：类型，如有限责任公司" },\n' +
     '  "claims": ["' + claimsNote + '1","' + claimsNote + '2"],\n' +
     '  "evidence": ["证据1（名称｜来源/形式｜证明目的）","证据2"],\n' +
     '  "factFields": { "与案由相关的要素标签":"内容", "要素2":"内容" },\n' +
@@ -2333,10 +2378,18 @@ async function genDualComplaint() {
     }).join('\n');
     const official = buildOfficialElemDoc(data);
     /* 2026-09-24 用户决定：出品只要素式，不再生成传统式（同时省掉一次 AI 调用） */
+    /* 2026-10-11：没有官方要素表时**不许**再退化成纯文本（用户看到的就是"没有外框"）。
+       改为阻断 + 明确提示，让用户从下拉里选官方案由，成稿区不再出现"没有表格"的文书。 */
+    if (!official) {
+      $('draftPrep').style.display = '';
+      $('draftPrepText').innerHTML = '<div class="err-box">' + elemNoTemplateHint(data) + '</div>';
+      $('draftResult').style.display = 'none';
+      $('selfCheckArea').innerHTML = '';
+      toast('没有匹配的官方要素表：请先选官方案由');
+      return;
+    }
     const docs = [
-      official
-        ? { name: '要素式起诉状（官方模板）', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }
-        : { name: '要素式起诉状', text: elemText }
+      { name: '要素式起诉状（官方模板）', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }
     ];
     currentDraft.docs = docs;
     // v3.3：记录生成快照与 AI 元数据，供存入 Document 时使用
@@ -2383,7 +2436,13 @@ async function genOfficialElemDoc() {
     if (!elemFormFilled) await runExtractFill();
     const data = readElemForm();
     const official = buildOfficialElemDoc(data);
-    if (!official) { toast('该案由暂无官方要素表模板，请核对案由后重试'); return; }
+    if (!official) {
+      $('draftPrep').style.display = '';
+      $('draftPrepText').innerHTML = '<div class="err-box">' + elemNoTemplateHint(data) + '</div>';
+      $('draftResult').style.display = 'none';
+      toast('没有匹配的官方要素表：请先选官方案由');
+      return;
+    }
     $('draftPrep').style.display = '';
     $('draftPrepText').innerHTML = '<span class="loading"><span class="spin"></span>正在按官方示范文本生成要素表…</span>';
     const docs = [{ name: official.title || data.caseType || '官方要素表文书', html: official.html, text: official.text, rows: official.rows, signs: official.signs, title: official.title, data: data }];
@@ -3352,6 +3411,110 @@ function elemOfficialFind(caseType) {
   return hit ? { key: hit.caseType, tpl: hit.tpl, docType: hit.docType, canonicalKey: hit.canonicalKey } : null;
 }
 
+/* ==================== 案由归一化（2026-10-11 用户第 N 次反馈"行政诉讼没有外框"） ====================
+   根因：案由命中不了 110 套官方版式时，旧逻辑会静默出一份"纯文本"文书（导出 .docx 里 0 张表 →
+   用户看到的就是"没有外框"）。这里先把泛称（行政诉讼、行政强制、交通事故…）落到最接近的官方案由，
+   归一化不成的交给调用方阻断提示——**任何情况下都不许再出"没有表格"的成稿**。 */
+const ELEM_CAUSE_KEYWORD_MAP = [
+  [/行政诉讼|行政案件|行政纠纷|行政争议|民告官/, ''],   // 只有泛称时按下面关键词继续判
+  [/房屋买卖|二手房|房产买卖/, '房屋买卖合同纠纷'],
+  [/房屋租赁|租赁合同|租金/, '房屋租赁合同纠纷'],
+  [/建设工程|工程款|施工合同/, '建设工程施工合同纠纷'],
+  [/金融借款|银行贷款|信用卡/, '金融借款合同纠纷'],
+  [/民间借贷|借款|出借|欠条|借条/, '民间借贷纠纷'],
+  [/离婚/, '离婚纠纷'],
+  [/买卖|货款|供货/, '买卖合同纠纷'],
+  [/物业|物业费/, '物业服务合同纠纷'],
+  [/劳动争议|劳动合同|工资|加班费|经济补偿/, '劳动争议纠纷'],
+  [/交通事故|车祸/, '机动车交通事故责任纠纷'],
+  [/政府信息公开|信息公开/, '政府信息公开'],
+  [/行政复议/, '行政复议'],
+  [/行政许可/, '行政许可'],
+  [/行政协议/, '行政协议'],
+  [/行政赔偿/, '行政赔偿'],
+  [/行政强制|查封|扣押|冻结|强拆|强制拆除|强制执行/, '行政强制执行'],
+  [/征收|拆迁|补偿决定/, '国有土地上房屋征收决定'],
+  [/行政处罚|罚款|治安|没收/, '行政处罚'],
+  [/工伤|保险待遇|待遇认定/, '工伤保险资格或者待遇认定'],
+  [/不作为|不履行|不履职|怠于|未履行|未答复/, '不履行法定职责'],
+  [/专利/, '专利无效行政纠纷'],
+  [/商标/, '商标无效行政纠纷']
+];
+const ELEM_EXEC_KEYWORD_MAP = [
+  [/不予执行/, '不予执行仲裁裁决、调解书或公证债权文书'],
+  [/参与分配/, '参与分配'],
+  [/执行担保|担保/, '执行担保'],
+  [/优先购买权/, '确认优先购买权'],
+  [/飞机|高铁|出行|限制措施/, '暂时解除乘坐飞机、高铁限制措施'],
+  [/执行异议|异议/, '执行异议'],
+  [/执行复议|复议/, '执行复议'],
+  [/执行监督|监督/, '执行监督'],
+  [/执行|强制|申请执行/, '强制执行']
+];
+/* 归一化用的检索文本：案由 + 素材 + 案由要素 + 诉讼请求 + 证据（证据最弱，放最后） */
+function elemCauseText(data, caseType) {
+  const d = data || {};
+  return [
+    String(caseType || d.caseType || ''),
+    String(d.material || ''),
+    (d.facts || []).map(f => (f && f.label ? f.label + ' ' : '') + ((f && f.content) || '')).join(' '),
+    (d.claims || []).join(' '),
+    (d.evidence || []).map(e => (typeof e === 'string' ? e : (e && e.name) || '')).join(' ')
+  ].join(' ');
+}
+function elemCauseKeywordGuess(text, map) {
+  const t = String(text || '');
+  for (const [re, name] of (map || ELEM_CAUSE_KEYWORD_MAP)) {
+    if (!name) continue;
+    if (re.test(t) && (typeof OFFICIAL_TEMPLATES === 'undefined' || OFFICIAL_TEMPLATES[name])) return name;
+  }
+  return '';
+}
+/* 泛称 → 官方案由。返回 '' 表示归一化不了（调用方阻断并提示，不许出无表格成稿）。 */
+function elemNormalizeCaseType(caseType, mode, data) {
+  const m = String(mode || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
+  const raw = String(caseType || '').trim();
+  if (raw && typeof findTemplate === 'function' && findTemplate(docTypeForMode(m, raw), raw)) return raw;   // 已经是官方案由
+  const text = elemCauseText(data, raw);
+  if (m === 'exec') return elemCauseKeywordGuess(text, ELEM_EXEC_KEYWORD_MAP);
+  if (m === 'answer') {
+    // 答辩状：行政案件统一落到通用的行政答辩状；民事按关键词落到对应民事答辩状
+    if (/行政|行政复议|行政处罚|行政许可|征收|信息公开|行政协议|行政赔偿|不履行/.test(text)
+      && typeof OFFICIAL_TEMPLATES !== 'undefined' && OFFICIAL_TEMPLATES['行政答辩状（通用）']) return '行政答辩状（通用）';
+  }
+  const guess = elemCauseKeywordGuess(text, ELEM_CAUSE_KEYWORD_MAP);
+  if (!guess) return '';
+  if (m === 'complaint' && typeof OFFICIAL_TEMPLATES !== 'undefined') {
+    // 民事案由在答辩状里也有同名模板；起诉状模式下不能落到答辩状模板
+    const g = OFFICIAL_TEMPLATES[guess];
+    if (g && /答辩状/.test(String(g.t || ''))) return '';
+  }
+  return guess;
+}
+/* 该文书类型下官方有哪些案由（供"请从下拉选择案由"的提示与 AI 提示词用） */
+function elemOfficialCaseNamesFor(mode) {
+  if (typeof OFFICIAL_TEMPLATES === 'undefined' || !OFFICIAL_TEMPLATES) return [];
+  const m = String(mode || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
+  const labels = [];
+  if (m === 'exec') labels.push('申请书');
+  else if (m === 'answer') labels.push('民事答辩状', '行政答辩状', '刑事（附带民事）自诉答辩状', '国家赔偿答辩状');
+  else if (m === 'compensation') labels.push('国家赔偿申请书');
+  else labels.push('民事起诉状', '行政起诉状', '刑事（附带民事）自诉状', '国家赔偿申请书');
+  const out = [];
+  for (const k in OFFICIAL_TEMPLATES) {
+    if (labels.indexOf(String(OFFICIAL_TEMPLATES[k].t || '')) >= 0) out.push(k);
+  }
+  return out;
+}
+/* 无官方要素表时的提示（阻断，不再静默出纯文本） */
+function elemNoTemplateHint(data) {
+  const m = String((data && data.mode) || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
+  const names = elemOfficialCaseNamesFor(m);
+  const raw = String((data && data.caseType) || '').trim();
+  return '⚠️ 没有找到与「' + (raw || '（案由为空）') + '」对应的官方要素表，本次不出成稿（避免生成"没有表格、没有外框"的文书）。'
+    + '<br>请在「② 案由」下拉里选择官方案由' + (names.length ? '，可选：' + names.join('、') : '') + '。';
+}
+
 /* 当事人身份识别：优先用 AI/表单给出的“类型”，其次名称关键词，最后兜底特征判断。
    官方模板的当事人行分「自然人」与「法人、非法人组织」两套，错判会导致整块当事人信息填不进去。 */
 const ELEM_ORG_WORDS = /(公司|集团|厂|店|合作社|银行|中心|事务所|学校|医院|研究院|农场|商店|局|委员会|协会|基金会|商会|部队|机构|经营部|服务部|工作室|商行|门市|超市|酒店|宾馆|网吧|养殖场|种植场|管理处|办公室|指挥部|项目部|工程处|支行|分行|分社|联社|总社|厅|委|署|站|所|队|团|馆|园|场|部)$/;
@@ -3623,9 +3786,18 @@ function elemPartySide(label) {
   if (/^\d/.test(raw.replace(/\s/g, ''))) return '';
   const n = elemNormKey(raw);
   if (!n) return '';
-  if (n.length > 14) return '';
   const P = ['原告', '自诉人', '申请人', '申请执行人', '赔偿请求人', '被答辩人'];
   const D = ['被告', '被告人', '被申请人', '被执行人', '答辩人', '赔偿义务机关'];
+  const sideOf = w => (P.some(x => w.indexOf(x) === 0) ? 'P' : (D.some(x => w.indexOf(x) === 0) ? 'D' : ''));
+  /* ① 官方有的当事人行很长：行政类的“被告（行政机关或者法律、法规、规章授权的组织）”
+     （2026-10-11 实测：被旧的"长度 > 14 就否掉"挡在门外 → 被告单位信息全空，
+      AI 的案情描述还被当成这一行的内容塞进去）。只要"角色 + 一个括号限定"就认。 */
+  if (/^(原告|被告|第三人|自诉人|申请人|被申请人|申请执行人|被执行人|答辩人|被答辩人|赔偿请求人|赔偿义务机关|被告人)\s*[（(][^）)]*[）)]\s*$/.test(raw)) {
+    const s = sideOf(n);
+    if (s) return s;
+  }
+  // ② 纯角色短标签（正文里提到当事人、带序号、过长的都不算）
+  if (n.length > 14) return '';
   if (P.some(w => n.includes(w))) return 'P';
   if (D.some(w => n.includes(w))) return 'D';
   return '';
@@ -4114,6 +4286,58 @@ function amounts(s) {
   return String(s || '').match(/[0-9][0-9,，.]*\s*(?:元|万元)/g) || [];
 }
 
+/* ==================== 强制执行/申请类「执行依据信息」块取数（2026-10-11） ====================
+   官方行：执行依据作出机构 / 案 由 / 文书号 / 生效日期 / 执行依据判项主文。
+   旧逻辑的毛病：① 「案 由」写死成 data.caseType，而 exec 模式的 caseType 只是"申请类型"
+   （强制执行／执行异议…），真正的案件案由从来没采集；② 「文书号」（官方放案号的位置）行标签与
+   AI 要素标签"生效文书（文书类型/案号/作出机关/生效日期/判项主文）"字面不同，关键词兜底命中不了 → 空；
+   ③ 「生效日期」反而被塞进整句话。这里改成"结构化字段优先 + 从生效文书要素分句拆分"。 */
+function elemExecRowKind(n) {
+  if (n === '案由') return '案由';
+  if (n === '文书号' || n === '案号' || n === '执行案号' || n === '执行依据案号'
+    || /^执行案号及被执行/.test(n) || /文书号案号|案号文书号/.test(n)) return '文书号';
+  if (/执行依据作出机构|作出机构|作出机关|文书作出机构/.test(n)) return '机构';
+  if (/生效日期|生效时间|生效之日/.test(n) && n.length <= 12) return '日期';
+  if (/判项主文|执行依据判项|判决主文/.test(n)) return '主文';
+  return '';
+}
+function elemExecBasisFact(data) {
+  const facts = ((data && data.facts) || []).filter(f => f && String(f.content || '').trim());
+  const hit = facts.find(f => {
+    const nl = elemNormKey(f.label || '');
+    return /生效文书|执行依据|依据文书|裁判文书|判决书|调解书|裁定书/.test(nl)
+      && !/请求依据|诉请依据|答辩依据|法律依据/.test(nl);
+  });
+  return hit ? String(hit.content || '') : '';
+}
+function elemExecBasisInfo(data) {
+  const text = [elemExecBasisFact(data), String((data && data.material) || '')].join(' ');
+  const caseNo = (text.match(/[（(]\s*\d{4}\s*[）)][^\s，。；;、]{0,24}?号/) || [''])[0].trim();
+  const org = (text.match(/[\u4e00-\u9fa5]{2,20}?(?:人民法院|仲裁委员会|公证处|人民检察院)/) || [''])[0].trim();
+  let date = '';
+  const dm = text.match(/生效[^0-9]{0,8}(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/)
+    || text.match(/(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)\s*(?:生效|发生法律效力)/)
+    || text.match(/(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/);
+  if (dm) date = dm[1].replace(/\s+/g, '');
+  const structuredNo = String((data && data.basisCaseNo) || '').trim();
+  const structuredCause = String((data && data.caseCause) || '').trim();
+  const factText = elemExecBasisFact(data);
+  let main = factText;
+  [caseNo, org, date].forEach(v => { if (v) main = main.split(v).join(' '); });
+  main = main.replace(/[（(]\s*\d{4}\s*[）)]\s*\d*\s*号/g, ' ')
+    .replace(/(民事|刑事|行政|仲裁|公证)?(判决书|裁定书|调解书|裁决书|支付令|决定书)/g, ' ')
+    /* 只清掉"独立出现"的生效字样（"2025年8月1日生效，判决：…"），
+       判项正文里的"本判决生效之日起十日内"必须原样保留 */
+    .replace(/发生法律效力(?=[，。；、\s]|$)/g, ' ')
+    .replace(/生效(?=[，。；、\s]|$)/g, ' ')
+    .replace(/作出|以上|，{2,}/g, ' ')
+    .replace(/^[\s，。；;、:：]+/, '').replace(/[\s，。；;、]+$/, '')
+    .replace(/\s{2,}/g, ' ').trim();
+  const causeGuess = structuredCause
+    || elemCauseKeywordGuess([structuredCause, elemCauseText(data), text].join(' '), ELEM_CAUSE_KEYWORD_MAP);
+  return { caseNo: structuredNo || caseNo, org, date, main, caseCause: causeGuess };
+}
+
 /* 表态类行只在"素材里能确认"时才勾选：确认不了就留空，由当事人自己勾。
    这些规则不接受"没提到就默认否/无"的猜测。 */
 const ELEM_ROW_DEFAULTS = [
@@ -4195,6 +4419,8 @@ const ELEM_ROW_FACT_HINTS = [
   [/仲裁|管辖|约定/, ['管辖', '仲裁']],
   [/调解|和解/, ['调解', '和解']],
   [/其他需要说明|其他需要列明|其他情况/, ['其他', '需要说明']],
+  /* —— 执行/申请类：官方行叫"其他财产线索"，AI 要素标签叫"被执行财产线索" —— */
+  [/其他财产线索|财产线索|可供执行财产|被执行财产/, ['被执行财产线索', '财产线索', '被执行财产']],
   /* —— 婚姻家庭 / 财产 / 债务 / 抚养 / 赔偿类要素行（离婚、婚约财产、共有物分割等案由的骨架） —— */
   [/财产|房产|房屋|门面|商铺|不动产|存款|车辆|汽车|股权|股票|基金|债权|分割/, ['共同财产分割请求', '夫妻共同财产', '财产情况', '共同财产', '房屋信息', '标的物情况']],
   [/债务|欠款|负债/, ['共同债务情况', '夫妻共同债务', '债务情况', '债务']],
@@ -4484,6 +4710,22 @@ function fillLayoutContent(label, content, data, elements) {
   const pl = data.plaintiff || {};
   const df = data.defendant || {};
   // 官方表头的“案号 / 案由”行：案由自动带上本案案由，案号留空由法院/当事人填写
+  // exec（强制执行/申请类）的「执行依据信息」块单列处理：结构化字段优先，再从"生效文书"要素分句拆分，
+  // 不再把"申请类型"当案由，也不会因为行标签与要素标签字面不同而留空（2026-10-11）。
+  const isExec = String((data && data.mode) || '') === 'exec';
+  if (isExec) {
+    const kind = elemExecRowKind(n);
+    if (kind) {
+      const ev = elemElementValue(label, elements);       // 复核框里人工改过的优先
+      if (ev) return ev;
+      const info = elemExecBasisInfo(data);
+      if (kind === '案由') return info.caseCause || '';
+      if (kind === '文书号') return info.caseNo || '';
+      if (kind === '机构') return info.org || '';
+      if (kind === '日期') return info.date ? String(t || '年 月 日').replace(/年\s*月\s*日/, info.date) : t;
+      if (kind === '主文') return info.main || '';
+    }
+  }
   if (n === '案由') {
     const ct = String(data.caseType || '').trim();
     if (ct && !t.trim()) t = ct;
@@ -4825,8 +5067,13 @@ function layoutRowsToText(title, rows, data) {
 }
 
 function buildOfficialElemDoc(data) {
-  const hit = elemOfficialFind(data.caseType);
   const mode = (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint';
+  /* 案由归一化：泛称（行政诉讼、行政强制、交通事故…）先落到最接近的官方案由，
+     否则 110 套版式一套都命中不了，旧逻辑就会静默出一份"没有表格"的纯文本（用户看到的"没有外框"）。 */
+  const rawCause = String((data && data.caseType) || '').trim();
+  const resolved = elemNormalizeCaseType(rawCause, mode, data);
+  if (resolved && resolved !== rawCause && data) { data.caseTypeRaw = rawCause; data.caseType = resolved; }
+  const hit = elemOfficialFind(data.caseType);
   const docType = (hit && hit.docType) || ((typeof docTypeForMode === 'function') ? docTypeForMode(mode, data.caseType) : '');
   const lm = layoutMatchFor((hit && (hit.key || data.caseType)) || data.caseType, docType);
   if (lm && lm.rows && lm.rows.length) {
