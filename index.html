@@ -271,6 +271,9 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
     <div id="typeRow">
       <label class="fld" id="typeRowLabel">② 案由（起诉状/答辩状/其他文书选填，AI 也会自动识别）</label>
       <select id="caseTypeSel" onchange="onDraftCaseTypeChange()"><option value="">—— 请选择案由（可留空让 AI 识别）——</option></select>
+    <div class="sub" id="caseTypeHint" style="margin-top:4px">
+      建议先在这里手选案由：<b>手选优先</b>，留空才由 AI 识别。手选能避免"生成后再改"；本机记住你常用的案由，下次自动带出（顶部「⭐ 常用案由」）。
+    </div>
     </div>
 
     <label class="fld">③ 粘贴素材（案情 / 诉求 / 判决书 / 说明）</label>
@@ -594,7 +597,9 @@ const DEFAULT_STATE = {
   rates: { deepseek: { in: 2, out: 3 }, zhipu: { in: 0, out: 0 }, qwen: { in: 0.8, out: 2 }, custom: { in: 1, out: 2 } },
   cases: [],
   documents: {},
-  ledger: []
+  ledger: [],
+  /* 用户偏好（2026-10-11 用户要求：记住常用选择，下次自动带出） */
+  preferences: { lastMode: 'complaint', lastCaseType: '', lastCourt: '', recentCaseTypes: [] }
 };
 
 const CASE_STATUSES = [
@@ -681,6 +686,48 @@ function loadState() {
 }
 function saveState() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { console.warn('本地保存失败', e); }
+}
+
+/* ==================== 用户偏好：记住常用选择（2026-10-11 用户要求） ====================
+   记住上次的「文书类型 / 案由 / 受理法院」，并把最近用过的案由做成下拉顶部的「⭐ 常用」分组，
+   下次打开直接带出、一点即用；手选过的案由优先于 AI 识别。 */
+function prefs() {
+  if (!state.preferences || typeof state.preferences !== 'object') {
+    state.preferences = { lastMode: 'complaint', lastCaseType: '', lastCourt: '', recentCaseTypes: [] };
+  }
+  if (!Array.isArray(state.preferences.recentCaseTypes)) state.preferences.recentCaseTypes = [];
+  return state.preferences;
+}
+function rememberCaseType(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  const p = prefs();
+  p.lastCaseType = n;
+  p.recentCaseTypes = [n].concat(p.recentCaseTypes.filter(x => x !== n)).slice(0, 6);
+  saveState();
+}
+function rememberCourt(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  prefs().lastCourt = n;
+  saveState();
+}
+/* 打开工具时把上次的选择带出来（文书类型 / 案由 / 受理法院） */
+function applyPreferences() {
+  const p = prefs();
+  const mode = (p.lastMode && MODE_NAMES && MODE_NAMES[p.lastMode]) ? p.lastMode : 'complaint';
+  setDraftMode(mode, true);
+  const ct = String(p.lastCaseType || '');
+  const sel = $('caseTypeSel');
+  if (ct && sel && Array.prototype.slice.call(sel.options).some(o => o.value === ct)) {
+    sel.value = ct;
+    currentDraft.caseType = ct;
+    currentDraft.caseTypeSource = 'manual';
+    renderElemFactFields(elemKeyOf(ct));
+  }
+  const court = $('elemCourt');
+  if (court && p.lastCourt) court.value = p.lastCourt;
+  if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(mode);
 }
 
 function $(id) { return document.getElementById(id); }
@@ -1159,6 +1206,7 @@ const MODE_NAMES = {
 };
 function setDraftMode(mode) {
   currentDraft.mode = mode;
+  if (!arguments[1]) { prefs().lastMode = mode; saveState(); }   /* 记住上次用的文书类型 */
   document.querySelectorAll('#draftModeRow .mode-chip').forEach(b => {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
@@ -1176,6 +1224,18 @@ document.querySelectorAll('#draftModeRow .mode-chip').forEach(b => {
 function populateCaseTypes() {
   const sel = $('caseTypeSel');
   sel.innerHTML = '<option value="">—— 请选择案由（可留空让 AI 识别）——</option>';
+  /* ⭐ 常用：最近用过的案由置顶，一点即选（2026-10-11） */
+  const recent = prefs().recentCaseTypes.filter(n => CASE_TYPES.some(g => (g.items || []).indexOf(n) >= 0));
+  if (recent.length) {
+    const og = document.createElement('optgroup');
+    og.label = '⭐ 常用案由（最近使用）';
+    recent.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  }
   CASE_TYPES.forEach(g => {
     const og = document.createElement('optgroup');
     og.label = g.g;
@@ -1282,7 +1342,16 @@ function applyDraftModeLabels(mode) {
   }
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set('typeRowLabel', L.type);
-  set('elemFormSub', L.sub);
+  /* 要素表单标题上带出"案由 + 来源"，生成完仍能看到（生成阶段会覆盖分析窗口的文案） */
+  const curSel = ($('caseTypeSel') ? $('caseTypeSel').value : '') || currentDraft.caseType || '';
+  const aiSel = String(currentDraft.aiCaseType || '');
+  let subText = L.sub;
+  if (curSel) {
+    const srcTxt = (aiSel && aiSel !== curSel) ? '你手选，AI 识别为「' + aiSel + '」'
+      : (currentDraft.caseTypeSource === 'manual' ? '你手选' : 'AI 识别');
+    subText += ' · 本次案由：' + curSel + '（' + srcTxt + '）';
+  }
+  set('elemFormSub', subText);
   set('elemPartyP', L.p);
   set('elemPartyD', L.d);
   set('elemClaimsLabel', claimsLabel);
@@ -1296,6 +1365,13 @@ function applyDraftModeLabels(mode) {
   /* 执行/申请类独有的两个结构化字段（案件案由 / 执行依据案号）只在该文书类型下显示 */
   const execExtra = $('elemExecExtra');
   if (execExtra) execExtra.style.display = (fam === 'exec') ? '' : 'none';
+  /* 案由提示：手选优先、留空由 AI 识别（按文书类型换措辞） */
+  const ctHint = $('caseTypeHint');
+  if (ctHint) {
+    ctHint.innerHTML = fam === 'exec'
+      ? '建议先手选<b>执行/申请类型</b>（强制执行/执行异议…）：手选优先，留空才由 AI 识别；本机记住常用选择（顶部「⭐ 常用案由」）。'
+      : '建议先在这里手选案由：<b>手选优先</b>，留空才由 AI 识别。手选能避免"生成后再改"；本机记住你常用的案由，下次自动带出（顶部「⭐ 常用案由」）。';
+  }
 }
 
 function elemRoleWords(mode, caseType) {
@@ -1330,6 +1406,12 @@ async function draftAnalyze(force) {
   try {
     let prompt = '请分析下面的素材，判断应出具什么文书，并整理关键要素。\n目标文书类型：' + MODE_NAMES[mode] + '\n素材：\n' + material +
       '\n\n请按以下格式输出（不要用表格）：\n文书类型：…\n案由：…\n当事人：…\n关键事实：1)… 2)…\n风险与注意（时效/管辖/证据/利率金额等）：1)… 2)…\n缺失信息（需要当事人补充的）：1)… 2)…';
+    /* 手选优先（2026-10-11 用户要求）：用户在下拉里选了案由，就按他选的提取，别改案由 */
+    const manualCause = ($('caseTypeSel').value || '').trim();
+    if (manualCause) {
+      prompt = prompt.replace('目标文书类型：' + MODE_NAMES[mode] + '\n',
+        '目标文书类型：' + MODE_NAMES[mode] + '\n用户已手动指定案由：' + manualCause + '（必须按这个案由提取，不要改成别的案由）\n');
+    }
     if (officialFlow) {
       prompt += '\n\n分析完成后，在最后单独输出一个 JSON 对象（不要 Markdown 代码块，不要额外解释），严格按此结构：\n';
       if (mode === 'complaint') {
@@ -1381,9 +1463,17 @@ async function draftAnalyze(force) {
       cost: lastLedger ? lastLedger.cost : 0
     };
     const caseTypeMatch = r.text.match(/案由[：:]\s*(.+)/);
+    /* 手选优先：用户手选的案由不被 AI 识别结果覆盖（只把它记为"AI 识别"，在分析窗口提示） */
+    const manualPick = (currentDraft.caseTypeSource === 'manual' && ($('caseTypeSel').value || currentDraft.caseType || '')) || '';
     if (caseTypeMatch && caseTypeMatch[1].replace(/[（(].*?[)）]/g, '').trim().length < 30) {
-      currentDraft.caseType = caseTypeMatch[1].trim();
-      $('caseTypeSel').value = currentDraft.caseType;
+      const aiCt = caseTypeMatch[1].trim();
+      currentDraft.aiCaseType = aiCt;
+      if (!manualPick) {
+        currentDraft.caseType = aiCt;
+        currentDraft.caseTypeSource = 'ai';
+        $('caseTypeSel').value = aiCt;
+        rememberCaseType(aiCt);
+      }
     }
     let displayText = r.text;
     let elemObj = null;
@@ -1391,6 +1481,15 @@ async function draftAnalyze(force) {
       const sp = splitAnalysisJson(r.text);
       elemObj = sp.obj;
       if (elemObj) displayText = sp.text || '（分析完成，请在下方要素表单核对、修改）';
+    }
+    /* 分析窗口里明确告诉你"案由是从哪来的"：你手选的 / AI 识别的（2026-10-11） */
+    const curCause = ($('caseTypeSel').value || currentDraft.caseType || '').trim();
+    const aiCause = String(currentDraft.aiCaseType || '').trim();
+    if (curCause) {
+      const note = (aiCause && aiCause !== curCause)
+        ? '案由：' + curCause + '（你手选；AI 识别为「' + aiCause + '」，本次按你手选的来）'
+        : '案由：' + curCause + '（' + (currentDraft.caseTypeSource === 'manual' ? '你手选' : 'AI 识别') + '）';
+      displayText = note + '\n\n' + displayText;
     }
     $('draftPrepText').innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.8">' + escHtml(displayText) + '</pre>';
     $('draftPrep').style.display = '';
@@ -2060,8 +2159,34 @@ function renderElemFactFields(key) {
 
 function onDraftCaseTypeChange() {
   const v = $('caseTypeSel').value;
+  /* 手选优先：只要用户在下拉里选了，就以此为准（并记住常用）；留空才由 AI 识别 */
+  currentDraft.caseTypeSource = v ? 'manual' : '';
+  if (v) { currentDraft.caseType = v; rememberCaseType(v); }
   renderElemFactFields(elemKeyOf(v));
   if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(currentDraft.mode);
+}
+
+/* 点一下提示里的案由按钮：切成官方案由 → 记为手选 → 立刻重新生成（2026-10-11） */
+function pickOfficialCaseCause(name) {
+  const n = String(name || '').trim();
+  if (!n) return;
+  const sel = $('caseTypeSel');
+  if (sel) {
+    if (!Array.prototype.slice.call(sel.options).some(o => o.value === n)) {
+      const opt = document.createElement('option'); opt.value = n; opt.textContent = n; sel.appendChild(opt);
+    }
+    sel.value = n;
+  }
+  currentDraft.caseType = n;
+  currentDraft.caseTypeSource = 'manual';
+  rememberCaseType(n);
+  renderElemFactFields(elemKeyOf(n));
+  if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(currentDraft.mode);
+  toast('已按「' + n + '」重新生成');
+  try {
+    const p = (typeof genDraftFromElemForm === 'function') ? genDraftFromElemForm() : null;
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) { /* 生成失败会在分析窗口给出提示 */ }
 }
 
 function readElemForm() {
@@ -2143,15 +2268,23 @@ function fillElemForm(obj) {
   set('elemBasisCaseNo', obj.basisCaseNo || '');  /* 执行/申请类：执行依据案号 */
   const caseType = obj.caseType || '';
   if (caseType) {
-    currentDraft.caseType = caseType;
     const sel = $('caseTypeSel');
-    const opts = Array.prototype.slice.call(sel.options);
-    const hit = opts.find(o => o.value === caseType) || opts.find(o => caseType.includes(o.value) || o.value.includes(caseType));
-    if (hit) sel.value = hit.value;
-    else {
-      const opt = document.createElement('option');
-      opt.value = caseType; opt.textContent = caseType;
-      sel.appendChild(opt); sel.value = caseType;
+    const manual = (currentDraft.caseTypeSource === 'manual' && sel && sel.value) ? sel.value : '';
+    if (manual) {
+      /* 手选优先：AI 识别结果只作参考，不覆盖用户手选的案由（2026-10-11 用户要求） */
+      currentDraft.aiCaseType = caseType;
+    } else {
+      currentDraft.caseType = caseType;
+      currentDraft.caseTypeSource = 'ai';
+      const opts = Array.prototype.slice.call(sel.options);
+      const hit = opts.find(o => o.value === caseType) || opts.find(o => caseType.includes(o.value) || o.value.includes(caseType));
+      if (hit) sel.value = hit.value;
+      else {
+        const opt = document.createElement('option');
+        opt.value = caseType; opt.textContent = caseType;
+        sel.appendChild(opt); sel.value = caseType;
+      }
+      rememberCaseType(caseType);
     }
   }
   const key = elemKeyOf(caseType);
@@ -2262,16 +2395,18 @@ async function runExtractFill() {
     : fam === 'compensation' ? '国家赔偿申请书'
       : fam === 'answer' ? '行政答辩状（通用）'
         : (mode === 'answer' ? '答辩状' : '民事起诉状');
+  const manualCause = ($('caseTypeSel').value || '').trim();   /* 手选优先：手选了就按手选的提取 */
   const caseHint = fam === 'exec'
-    ? '案由请从这些中选择：强制执行、参与分配、执行担保、确认优先购买权、暂时解除乘坐飞机、高铁限制措施、执行异议、执行复议、执行监督、不予执行仲裁裁决、调解书或公证债权文书；其他情况按素材判断最接近的类型。\n'
-    : fam === 'compensation'
+    ? (manualCause
+      ? '用户已手动指定案由：' + manualCause + '（必须按它提取，不要改成别的案由）。\n'
+      : '案由请从这些中选择：强制执行、参与分配、执行担保、确认优先购买权、暂时解除乘坐飞机、高铁限制措施、执行异议、执行复议、执行监督、不予执行仲裁裁决、调解书或公证债权文书；其他情况按素材判断最接近的类型。\n')
+    : manualCause
+      ? '用户已手动指定案由：' + manualCause + '（必须按它提取要素，不要改成别的案由）。\n'
+      : fam === 'compensation'
       ? '案由请从这些中选择：违法刑事拘留赔偿、刑事改判无罪赔偿、怠于履行监管职责致伤致死赔偿、错误执行赔偿。\n'
       : fam === 'answer'
         ? '案由请输出：行政答辩状（通用）。\n'
         : elemCaseHintNames()
-          /* 案由清单必须是"该文书类型下官方有的全部案由名"。旧清单只有 12 条（行政仅 4 条），
-             模型只好回"行政诉讼／行政强制／不服行政处罚"这类清单外的名字 → 命中不了官方版式，
-             旧逻辑就静默出一份"没有表格、没有外框"的纯文本（2026-10-11 用户第 N 次反馈）。 */
           + '案由必须从上面的清单里**原样照抄**一个（不要自造"行政诉讼/行政案件/行政纠纷"这类泛称）；素材涉及行政案件时，从"行政起诉状"那一行的案由里选最接近的。\n';
   const claimsNote = fam === 'exec' ? '申请执行事项（写明本金/利息/费用/行为）'
     : fam === 'compensation' ? '赔偿请求（项目与金额）'
@@ -2946,7 +3081,15 @@ function ensureV3State(input) {
     rates: (base.rates && typeof base.rates === 'object') ? base.rates : {},
     cases: Array.isArray(base.cases) ? base.cases.map(normalizeV3Case).filter(Boolean) : [],
     documents: (base.documents && typeof base.documents === 'object' && !Array.isArray(base.documents)) ? base.documents : {},
-    ledger: Array.isArray(base.ledger) ? base.ledger : []
+    ledger: Array.isArray(base.ledger) ? base.ledger : [],
+    /* 用户偏好：上次的文书类型/案由/法院 + 常用案由（最近使用的若干条） */
+    preferences: {
+      lastMode: (base.preferences && base.preferences.lastMode) || 'complaint',
+      lastCaseType: (base.preferences && base.preferences.lastCaseType) || '',
+      lastCourt: (base.preferences && base.preferences.lastCourt) || '',
+      recentCaseTypes: (base.preferences && Array.isArray(base.preferences.recentCaseTypes))
+        ? base.preferences.recentCaseTypes.filter(x => typeof x === 'string' && x).slice(0, 6) : []
+    }
   };
 }
 
@@ -3390,7 +3533,10 @@ updateModelPill();
 renderLedger();
 updateStats();
 renderGovernGrid();
-setDraftMode('complaint');
+/* 带出上次的「文书类型 / 案由 / 受理法院」，并把最近用过的案由放进「⭐ 常用案由」（2026-10-11） */
+applyPreferences();
+const elemCourtEl = document.getElementById('elemCourt');
+if (elemCourtEl) elemCourtEl.addEventListener('change', () => rememberCourt(elemCourtEl.value));
 
 /* ==================== 官方要素式模板渲染（67类示范文本 · 外框表格） ==================== */
 
@@ -3511,8 +3657,17 @@ function elemNoTemplateHint(data) {
   const m = String((data && data.mode) || (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
   const names = elemOfficialCaseNamesFor(m);
   const raw = String((data && data.caseType) || '').trim();
-  return '⚠️ 没有找到与「' + (raw || '（案由为空）') + '」对应的官方要素表，本次不出成稿（避免生成"没有表格、没有外框"的文书）。'
-    + '<br>请在「② 案由」下拉里选择官方案由' + (names.length ? '，可选：' + names.join('、') : '') + '。';
+  /* 不再用"错误"的口吻：这是一次"需要你选一下案由"的引导（2026-10-11 用户要求 UI 明确提示 + 手选优先） */
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const btns = names.slice(0, 14).map(n =>
+    '<button class="btn btn-line btn-sm" style="margin:3px 4px 0 0" onclick="pickOfficialCaseCause(\'' + escH(n) + '\')">' + escH(n) + '</button>').join('');
+  return '<div style="background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 12px;line-height:1.9">'
+    + '<b>这个案由没有对应的官方要素表，所以这次没有出稿</b>——不出比出一份"没有表格、没有外框"的文书更稳妥。<br>'
+    + '你刚才填的信息都还在，不用重来。请在上方「② 案由」里改选一个官方案由，或直接点相近的一个，我立刻按它重新生成：<br>'
+    + (btns || '（该文书类型没有可选案由）')
+    + (names.length ? '<div class="sub" style="margin-top:6px">全部可选：' + escH(names.join('、')) + '</div>' : '')
+    + '<div class="sub" style="margin-top:2px">当前案由：' + escH(raw || '（空）') + '</div>'
+    + '</div>';
 }
 
 /* 当事人身份识别：优先用 AI/表单给出的“类型”，其次名称关键词，最后兜底特征判断。
