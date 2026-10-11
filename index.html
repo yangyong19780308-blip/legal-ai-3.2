@@ -1417,9 +1417,11 @@ async function draftAnalyze(force) {
       if (mode === 'complaint') {
         prompt += '{"caseType":"案由名称","plaintiff":{"type":"自然人/法人或其他组织","name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","workUnit":"","position":"","legalRep":"","legalRepPosition":"","creditCode":"","regAddr":"","orgType":"","ownership":""},"defendant":{"type":"自然人/法人或其他组织","name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","workUnit":"","position":"","legalRep":"","legalRepPosition":"","creditCode":"","regAddr":"","orgType":"","ownership":""},"claims":["诉讼请求1","诉讼请求2"],"evidence":["证据1（名称｜来源/形式｜证明目的）"],"factFields":{"与案由相关的要素标签":"内容"},"elements":{"官方要素表行标签":"该行应填内容"},"factReason":"","court":"受理法院，未知则空"}\n';
         prompt += '当事人说明：原告/被告是公司、机关、事业单位、合作社等单位的，type 填“法人或其他组织”，并尽量给出 legalRep（法定代表人/负责人）、creditCode（统一社会信用代码）、regAddr（注册地/登记地）、orgType（企业类型，如“有限责任公司”）、ownership（所有制性质）；个人则 type 填“自然人”，并给出工作单位（workUnit）、职务（position）。\n';
-      } else if (mode === 'exec') {
+    } else if (mode === 'exec') {   /* 执行/申请类：caseType 是"申请类型"，另有 caseCause（原审案由）、basisCaseNo（执行依据案号） */
         prompt += '{"caseType":"执行/申请类型名称（如：强制执行/参与分配/执行异议等）","plaintiff":{"type":"自然人/法人或其他组织","name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","workUnit":"","position":"","legalRep":"","creditCode":""},"defendant":{"type":"自然人/法人或其他组织","name":"","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","workUnit":"","position":"","legalRep":"","creditCode":""},"claims":["申请执行事项1（本金/利息/费用写明金额）","申请执行事项2"],"evidence":["随附材料或财产线索（名称｜形式｜证明目的）"],"factFields":{"与执行申请书相关的要素标签":"内容"},"elements":{"官方要素表行标签":"该行应填内容"},"factReason":"","court":"执行法院，未知则空"}\n';
         prompt += '说明：plaintiff 为申请执行人（原权利人），defendant 为被执行人；素材未提及的字段一律为空字符串或空数组，绝不编造。\n';
+        prompt += '另外请在同一个 JSON 里给出：caseCause（执行依据/原审案件的案由，如“民间借贷纠纷”；判断不出就空字符串）、basisCaseNo（执行依据案号，如“（2025）皖1621民初1234号”；没有就空字符串）。\n';
+        prompt += '特别注意：caseType 只填“执行/申请类型”（如强制执行）；官方要素表行「案 由」填的是执行依据（原审案件）的案由，「文书号」填执行依据案号，「执行依据作出机构」填作出裁判的法院/机构。\n';
       } else if (mode === 'answer') {
         prompt += '{"caseType":"案由（民事/行政/刑事自诉/国家赔偿，如：买卖合同纠纷、行政答辩状（通用））","plaintiff":{"type":"自然人/法人或其他组织","name":"原审原告/被答辩人","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","legalRep":"","creditCode":""},"defendant":{"type":"自然人/法人或其他组织","name":"答辩人","gender":"","birth":"","nation":"","idNo":"","addr":"","liveAddr":"","phone":"","legalRep":"","creditCode":""},"claims":["答辩请求1","答辩请求2"],"evidence":["证据1（名称｜来源/形式｜证明目的）"],"factFields":{"与答辩状相关的要素标签":"内容"},"elements":{"官方要素表行标签":"该行应填内容（如“有☑ 异议内容：…”“无☑”）"},"factReason":"","court":"受理法院，未知则空"}\n';
         prompt += '说明：defendant 为答辩人（行政机关/授权组织），plaintiff 为原审原告；素材未提及的字段一律为空字符串或空数组，绝不编造。\n';
@@ -1439,7 +1441,9 @@ async function draftAnalyze(force) {
         prompt += 'factFields 的键必须从下面原样选取（不要改写、不要加标点、不要合并）：\n' + labels.join('、') + '\n';
       }
       // 各文书类型通用：把官方要素表逐行清单交给 AI，直接产出可填入每一行的内容
-      const rowLabels = elemOfficialRowLabels($('caseTypeSel').value || currentDraft.caseType || '', mode);
+      const rowLabels = (typeof elemOfficialRowPromptList === 'function')
+        ? elemOfficialRowPromptList($('caseTypeSel').value || currentDraft.caseType || '', mode)
+        : elemOfficialRowLabels($('caseTypeSel').value || currentDraft.caseType || '', mode);
       if (rowLabels.length) {
         prompt += '\n\nelements 用于直接填官方要素表：键必须原样取自下面《本案由官方要素表行清单》，不要改写、不要加标点、不要遗漏案件涉及的项。\n' +
           '值的要求：按该行原本的填写格式给出，模板已有的文字要保留、只把空白处补全（例：本金行 → “截至2024年6月1日止，尚欠本金50000元”；答辩行 → “无☑”或“有☑ 异议内容：…”）；有勾选框的用“☑”表示选中、未选的保留“□”；素材未涉及的行不要编造，直接省略该键。\n' +
@@ -3586,6 +3590,24 @@ const ELEM_CAUSE_KEYWORD_MAP = [
   [/专利/, '专利无效行政纠纷'],
   [/商标/, '商标无效行政纠纷']
 ];
+/* 执行/申请类「案 由」行 = 执行依据（原审案件）的案由：
+   只看"生效文书/素材/请求/证据"，**不含 caseType**（那是申请类型，会把"强制执行"误猜成"行政强制执行"）。 */
+const ELEM_EXEC_CAUSE_MAP = [
+  [/房屋买卖|二手房|房产买卖/, '房屋买卖合同纠纷'],
+  [/房屋租赁|租赁合同|租金/, '房屋租赁合同纠纷'],
+  [/建设工程|工程款|施工合同/, '建设工程施工合同纠纷'],
+  [/金融借款|银行贷款/, '金融借款合同纠纷'],
+  [/信用卡/, '信用卡纠纷'],
+  [/物业服务|物业费/, '物业服务合同纠纷'],
+  [/劳动争议|劳动合同|工资|加班费|经济补偿/, '劳动争议纠纷'],
+  [/机动车交通事故|交通事故|车祸/, '机动车交通事故责任纠纷'],
+  [/民间借贷|借款|借条|欠条|出借/, '民间借贷纠纷'],
+  [/离婚/, '离婚纠纷'],
+  [/买卖|货款|供货/, '买卖合同纠纷'],
+  [/政府信息公开/, '政府信息公开'],
+  [/行政处罚|行政处理决定|罚款/, '行政处罚'],
+  [/行政强制|强制拆除|查封|扣押/, '行政强制执行']
+];
 const ELEM_EXEC_KEYWORD_MAP = [
   [/不予执行/, '不予执行仲裁裁决、调解书或公证债权文书'],
   [/参与分配/, '参与分配'],
@@ -4488,8 +4510,11 @@ function elemExecBasisInfo(data) {
     .replace(/作出|以上|，{2,}/g, ' ')
     .replace(/^[\s，。；;、:：]+/, '').replace(/[\s，。；;、]+$/, '')
     .replace(/\s{2,}/g, ' ').trim();
-  const causeGuess = structuredCause
-    || elemCauseKeywordGuess([structuredCause, elemCauseText(data), text].join(' '), ELEM_CAUSE_KEYWORD_MAP);
+  /* 注意：这里**不能**把 caseType（那是"执行/申请类型"）放进检索文本，
+     否则"强制执行"会被当成案由猜成"行政强制执行"。只看生效文书 + 素材 + 请求 + 证据。 */
+  const causePool = [text, (data && (data.claims || []).join(' ')) || '',
+    (data && (data.evidence || []).map(e => (typeof e === 'string' ? e : (e && e.name) || '')).join(' ')) || ''].join(' ');
+  const causeGuess = structuredCause || elemCauseKeywordGuess(causePool, ELEM_EXEC_CAUSE_MAP);
   return { caseNo: structuredNo || caseNo, org, date, main, caseCause: causeGuess };
 }
 
@@ -4872,9 +4897,24 @@ function fillLayoutContent(label, content, data, elements) {
     const kind = elemExecRowKind(n);
     if (kind) {
       const ev = elemElementValue(label, elements);       // 复核框里人工改过的优先
-      if (ev) return ev;
       const info = elemExecBasisInfo(data);
-      if (kind === '案由') return info.caseCause || '';
+      if (kind === '案由') {
+        /* 「案 由」= 执行依据（原审案件）的案由，**与文书类型/申请类型解耦**（2026-10-11 用户 P0 指令）。
+           优先级：① 用户手输的"案件案由"字段 → ② 从素材/生效文书里提取（民间借贷纠纷、买卖合同纠纷…）
+                  → ③ 模型/复核框针对这一行给的值（但若是把"强制执行"这类申请类型回显进来，不算）
+                  → ④ 识别不出就**留空**（不再用文书类型填充，由当事人自己填）。 */
+        const e = String(ev || '').trim();
+        const ctKey = elemNormKey(String(data.caseType || ''));
+        const isEcho = !!(e && ctKey && elemNormKey(e) === ctKey);
+        const manualCause = String((data && data.caseCause) || '').trim();
+        if (manualCause) return manualCause;
+        if (info.caseCause) return info.caseCause;
+        if (e && !isEcho) return e;
+        /* 用户 2026-10-11 定调："我手动选类型、素材给得全，不要有顾虑" →
+           素材实在看不出原审案由时，就按他选的类型先填上（宁可有个值可改，也不要空着）。 */
+        return String(data.caseType || '').trim();
+      }
+      if (ev) return ev;
       if (kind === '文书号') return info.caseNo || '';
       if (kind === '机构') return info.org || '';
       if (kind === '日期') return info.date ? String(t || '年 月 日').replace(/年\s*月\s*日/, info.date) : t;
@@ -5045,6 +5085,18 @@ function elemOfficialRowList(caseType, docType) {
   return out;
 }
 /* 按 mode 推断 docType 后取官方要素行标签（供 AI 提示用） */
+/* 供 AI 提示的"官方要素表行清单（带每行的官方填写要求）"：
+   旧版只传标签、把官方写在行里的"写明…／注明…"丢了，才会出现"利息只写'利息'"这类空泛答案。
+   2026-10-11 用户定调"素材给得全，不要有顾虑" → 把每行的官方要求一起交给模型，逐行填满。 */
+function elemOfficialRowPromptList(caseType, mode) {
+  const dt = elemModeDocType(caseType, mode);
+  const list = elemOfficialRowList(caseType, dt);
+  return list.map(r => {
+    const tpl = String(r.template || '').replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    if (!tpl) return r.label;
+    return r.label + '（官方要求/参考：' + tpl.slice(0, 150) + '）';
+  });
+}
 function elemOfficialRowLabels(caseType, mode) {
   const m = mode || ((typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint');
   const dt = (typeof docTypeForMode === 'function') ? docTypeForMode(m, caseType) : '';
