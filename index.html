@@ -5820,5 +5820,82 @@ function restoreCase(id) {
 }
 
 </script>
+
+<script>
+/* 链接预填（只增不改的补丁）：?m=素材 & cause=案由 & mode=文书类型 & z=1（gzip+base64url）
+   点开链接即把素材填入「材料撰写」、选好案由并跳到该页签。 */
+(function () {
+  function param(name) {
+    var src = String(location.search || '').replace(/^\?/, '') + '&' + String(location.hash || '').replace(/^#/, '');
+    var m = new RegExp('[&]' + name + '=([^&#]*)').exec('&' + src);
+    if (!m) return '';
+    try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { return ''; }
+  }
+  function bytes(b64) {
+    var s = String(b64).replace(/-/g, '+').replace(/_/g, '/');
+    var pad = s.length % 4 ? new Array(5 - (s.length % 4)).join('=') : '';
+    var bin = atob(s + pad);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function toastSafe(msg) { try { toast(msg); } catch (e) { } }
+  function text() {
+    var mat = param('m');
+    if (!mat) return Promise.resolve('');
+    if (param('z') !== '1') return Promise.resolve(mat);
+    if (typeof DecompressionStream !== 'function') {
+      toastSafe('此浏览器不支持链接解压，请改用明文链接');
+      return Promise.resolve('');
+    }
+    try {
+      var stream = new Blob([bytes(mat)]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return new Response(stream).text().catch(function () {
+        toastSafe('链接里的素材解压失败，请改用明文链接');
+        return '';
+      });
+    } catch (e) {
+      toastSafe('链接里的素材解压失败，请改用明文链接');
+      return Promise.resolve('');
+    }
+  }
+  function fill(mat, cause, mode) {
+    if (!String(mat || '').trim()) return false;
+    try { if (typeof setDraftMode === 'function') setDraftMode(mode || 'complaint', true); } catch (e) { }
+    var t = document.getElementById('draftMaterial');
+    if (t) t.value = mat;
+    var cm = document.getElementById('caseMaterial');
+    if (cm && !String(cm.value || '').trim()) cm.value = mat;
+    if (cause) {
+      var sel = document.getElementById('caseTypeSel');
+      if (sel) {
+        var has = Array.prototype.slice.call(sel.options).some(function (o) { return o.value === cause; });
+        if (!has) {
+          var o = document.createElement('option');
+          o.value = cause; o.textContent = cause;
+          sel.appendChild(o);
+        }
+        sel.value = cause;
+        try {
+          currentDraft.caseType = cause;
+          currentDraft.caseTypeSource = 'manual';
+          if (typeof renderElemFactFields === 'function' && typeof elemKeyOf === 'function') renderElemFactFields(elemKeyOf(cause));
+          if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(currentDraft.mode);
+          if (typeof rememberCaseType === 'function') rememberCaseType(cause);
+        } catch (e) { }
+      }
+    }
+    try { if (typeof goTab === 'function') goTab('draft'); } catch (e) { }
+    return true;
+  }
+  function run() {
+    var cause = param('cause');
+    var mode = param('mode') || 'complaint';
+    text().then(function (mat) { fill(mat, cause, mode); }).catch(function () { });
+  }
+  if (document.readyState === 'complete') setTimeout(run, 0);
+  else window.addEventListener('load', function () { setTimeout(run, 0); });
+})();
+</script>
 </body>
 </html>
