@@ -396,11 +396,13 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
   <div id="draftResult" style="display:none">
     <div class="card">
       <h2>⑥ 文书预览 <small>成稿即用，可直接复制 / 导出 / 打印</small></h2>
+      <div id="elemSummary" class="sub" style="margin:2px 0 8px;line-height:1.9"></div>
       <div class="doc-tabs" id="docTabs"></div>
       <div class="doc-body" id="docBody"></div>
       <div class="btnrow">
         <button class="btn btn-green" onclick="copyDoc()">📋 复制全文</button>
         <button class="btn btn-gold" onclick="exportDocx()">📥 导出 Word（.docx）</button>
+        <button class="btn btn-line btn-sm" onclick="exportCheckDraft()">📄 导出核对稿（非提交版）</button>
         <button class="btn btn-primary" onclick="printDoc()">🖨 打印</button>
         <button class="btn btn-line" onclick="selfCheck()">🔍 AI 自检复核</button>
         <button class="btn btn-ghost" onclick="saveDraftToCase()">💾 存入案件档案</button>
@@ -1604,7 +1606,46 @@ function splitDocs(text, mode) {
   return [{ name: MODE_NAMES[mode], text: text.trim() }];
 }
 
+/* ===== 成稿区上方的「要素摘要条」（2026-10-16 用户选方案 A）=====
+   正式成稿保持与官方模板 1:1 不动；把"案由 / 当事人 / 诉讼请求 / 标的金额"加粗列在成稿上方，
+   方便一眼核对，不污染要提交的文书。 */
+function renderElemSummary() {
+  const box = $('elemSummary');
+  if (!box) return;
+  const d = (currentDraft && currentDraft.lastData) || null;
+  if (!d) { box.innerHTML = ''; return; }
+  const p = d.plaintiff || {}, df = d.defendant || {};
+  const esc2 = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const claims = (d.claims || []).slice(0, 3).map(c => String(c).replace(/^\d+[.、)]\s*/, ''));
+  const who = [];
+  if (p.name) who.push('原告/申请执行人：' + p.name);
+  if (df.name) who.push('被告/被执行人：' + df.name);
+  const parts = [];
+  if (d.caseType) parts.push('<b>案由：' + esc2(d.caseType) + '</b>');
+  if (who.length) parts.push('<b>' + esc2(who.join('　')) + '</b>');
+  if (claims.length) parts.push('<b>诉讼请求：</b>' + esc2(claims.join('；')));
+  if (d.total) parts.push('<b>标的金额：</b>' + esc2(d.total));
+  if (d.court) parts.push('受理法院：' + esc2(d.court));
+  box.innerHTML = parts.length
+    ? '<div style="background:#f6faff;border:1px solid #d6e8ff;border-radius:8px;padding:8px 12px">要素摘要（仅供核对，正式成稿按官方模板 1:1 出）<br>' + parts.join('<br>') + '</div>'
+    : '';
+}
+/* 核对稿（非提交版）：同一份成稿，但把案由/当事人/诉讼请求等加粗、加大，文件名带"核对稿（非提交版）" */
+function exportCheckDraft() {
+  if (!(curDocRows && curDocRows.length)) { toast('当前这份没有表格结构，无法导出核对稿'); return; }
+  const stamp = today().replace(/[年月日]/g, '');
+  const base = String(curDocName || '法律文书').replace(/_\d{8}$/, '');
+  const doc = { rows: curDocRows, signs: curDocSigns, data: curDocData, title: curDocTitle, text: curDocText, name: base };
+  const blob = docxBlobForDoc(doc, (curDocTitle || base) + '（核对稿·非提交版）', { checkDraft: true });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = base + '_核对稿（非提交版）_' + stamp + '.docx';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast('已导出核对稿（非提交版，请勿直接提交法院）');
+}
 function renderDraftDocs(docs) {
+  renderElemSummary();
   const tabs = $('docTabs');
   tabs.innerHTML = '';
   const showDoc = (d, b) => {
@@ -5058,7 +5099,8 @@ function fillLayoutRows(rows, data) {
       out.push(r);
     }
   }
-  return out;
+  /* 勾选纪律：素材里认不出来的勾，一律退回 □（2026-10-16） */
+  return elemSanitizeCheckBoxes(out, data);
 }
 /* 官方要素行清单：供 AI 提示、表单复核、缺失审计使用 */
 function elemModeDocType(caseType, mode) {
@@ -5273,6 +5315,52 @@ function layoutRowsToText(title, rows, data) {
   return lines.join('\n');
 }
 
+/* ===== 勾选纪律（2026-10-16 用户再确认："勾选项，如果不能智能识别就放弃勾选"）=====
+   模型/复核框给出的 ☑，被勾的那个**具体选项名**（罚款、没收违法所得、判决书、短信、微信、一般授权…）
+   如果在素材/请求/证据里都找不到，就退回 □（放弃勾选）。
+   极性词（是/否/有/无/了解/同意/主张/申请…）不在这里处理——那些是逐行判断，由 ELEM_ROW_DEFAULTS 与行内取数负责。 */
+const ELEM_POLAR_OPT = /^(是|否|有|无|了解|不了解|同意|不同意|主张|不主张|申请|不申请|可以|不可以|其他|其他企业法人)$/;
+function elemSanitizeCheckBoxes(rows, data) {
+  const hay = elemNormKey([
+    String((data && data.material) || ''),
+    (data && (data.claims || []).join(' ')) || '',
+    ((data && (data.facts || [])) || []).map(f => ((f && f.label) || '') + ((f && f.content) || '')).join(' '),
+    ((data && (data.evidence || [])) || []).map(e => (typeof e === 'string' ? e : ((e && e.name) || ''))).join(' ')
+  ].join(' '));
+  if (!hay) return rows;
+  const ok = opt => ELEM_POLAR_OPT.test(opt) || hay.indexOf(elemNormKey(opt)) >= 0;
+  const fix = txt => String(txt == null ? '' : txt)
+    .replace(/([\u4e00-\u9fa5A-Za-z0-9]{2,14})☑/g, (m, opt) => (ok(opt) ? m : opt + '□'))
+    .replace(/☑([\u4e00-\u9fa5A-Za-z0-9]{2,14})/g, (m, opt) => (ok(opt) ? m : '□' + opt));
+  return rows.map(r => (r && r.length >= 3 && r[0] === 'r') ? [r[0], r[1], fix(r[2])] : r);
+}
+/* 通用要素表版式（案由没有官方示范文本时用）：与官方版式同一套"有外框的表格"，
+   栏目固定为 当事人信息／诉讼请求／事实与理由／证据清单／落款，内容全部取自素材。 */
+function elemGenericLayoutRows(data) {
+  const p = (data && data.plaintiff) || {}, d = (data && data.defendant) || {};
+  const isOrg = x => (typeof elemIsCompany === 'function') ? elemIsCompany(x.name, x) : false;
+  const pText = p.name ? ('名称/姓名：' + p.name + '\n住所地：' + (p.addr || '') + '\n法定代表人/负责人：' + (p.legalRep || '')
+    + ' 职务：' + (p.legalRepPosition || p.position || '') + ' 联系电话：' + (p.phone || '')
+    + (p.idNo ? '\n证件号码：' + p.idNo : '')) : '';
+  const dText = d.name ? ('名称/姓名：' + d.name + '\n住所地：' + (d.addr || '') + '\n法定代表人/负责人：' + (d.legalRep || '')
+    + ' 职务：' + (d.legalRepPosition || d.position || '') + ' 联系电话：' + (d.phone || '')
+    + (d.idNo ? '\n证件号码：' + d.idNo : '')) : '';
+  const claims = (data.claims || []).map((c, i) => (i + 1) + '. ' + String(c).replace(/^\d+[.、)]\s*/, '')).join('\n');
+  const facts = (data.facts || []).filter(f => f && String(f.content || '').trim())
+    .map(f => (f.label ? '【' + f.label + '】' : '') + String(f.content).trim()).join('\n');
+  const evidence = (data.evidence || []).map((e, i) => (i + 1) + '. ' + (typeof e === 'string' ? e : (e && e.name) || '')).join('\n');
+  const rows = [['s', '当事人信息']];
+  rows.push(['r', '原告/自诉人/申请人（' + (isOrg(p) ? '法人、非法人组织' : '自然人') + '）', pText]);
+  rows.push(['r', '被告/被告人/被申请人（' + (isOrg(d) ? '法人、非法人组织' : '自然人') + '）', dText]);
+  rows.push(['s', '诉讼请求']);
+  rows.push(['r', '诉讼请求', claims]);
+  rows.push(['s', '事实与理由']);
+  rows.push(['r', '事实与理由', facts]);
+  rows.push(['s', '证据清单']);
+  rows.push(['r', '证据清单', evidence]);
+  rows.push(['sign', '具状人（签字、盖章）：']);
+  return rows;
+}
 function buildOfficialElemDoc(data) {
   const mode = (typeof currentDraft !== 'undefined' && currentDraft && currentDraft.mode) || 'complaint';
   /* 案由归一化：泛称（行政诉讼、行政强制、交通事故…）先落到最接近的官方案由，
@@ -5300,7 +5388,20 @@ function buildOfficialElemDoc(data) {
       signs: filled.filter(r => r[0] === 'sign').map(r => r[1] || '')
     };
   }
-  if (!hit) return null;
+  /* ===== 永远出稿（2026-10-16 用户："无法正常出产品了？""必须出产品，不要有顾虑"）=====
+     案由命中不了官方示范文本时，不再拒稿，而是用**同一套带外框的要素表版式**出一份
+     通用要素表文书（当事人信息／诉讼请求／事实与理由／证据清单／落款），内容全部来自素材。
+     既不假称某个官方案由，也不会出现"没有表格、没有外框"的文书。 */
+  if (!hit) {
+    const gRows = elemGenericLayoutRows(data);
+    const gTitle = (data.caseType ? String(data.caseType) : '要素式') + '（通用要素表）';
+    return {
+      html: layoutRowsToHtml(gTitle, gRows, data),
+      text: layoutRowsToText(gTitle, gRows, data),
+      official: false, generic: true, title: gTitle,
+      rows: gRows, signs: ['具状人（签字、盖章）：']
+    };
+  }
   const rows = fillOfficialRows(hit.tpl, data);
   const title = hit.tpl.title || hit.tpl.t;
   return {
@@ -5449,10 +5550,13 @@ function docxNoteParas(text) {
 }
 
 /* ---------- 文档主体 ---------- */
-function docxTableBodyXml(title, rows, signs, data) {
+function docxTableBodyXml(title, rows, signs, data, opts) {
+  opts = opts || {};
+  const check = !!opts.checkDraft;   /* 核对稿（非提交版）：只有这一份才加粗强调 */
   const tp = (typeof splitOfficialTitle === 'function') ? splitOfficialTitle(title) : [String(title || ''), ''];
   let x = dxPara(tp[0], { sz: DOCX_SZ_TITLE, bold: true, font: '方正大标宋_GBK', align: 'center' });
   if (tp[1]) x += dxPara(tp[1], { sz: DOCX_SZ_SUB, font: '方正小标宋_GBK', align: 'center' });
+  if (check) x += dxPara('核对稿（非提交版）· 请勿直接提交法院', { sz: DOCX_SZ_BODY, bold: true, align: 'center', font: '方正黑体_GBK' });
   let trs = '';
   (rows || []).forEach(r => {
     const k = r[0];
@@ -5469,15 +5573,18 @@ function docxTableBodyXml(title, rows, signs, data) {
         ? splitElemBigHeaderRows(text) : null;
       let paras;
       if (isNote) paras = docxNoteParas(text);
-      else if (isSec) paras = [dxPara(text.replace(/\s+/g, ' ').trim(), { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center' })];
+      else if (isSec) paras = [dxPara(text.replace(/\s+/g, ' ').trim(), { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center', bold: check })];
       else if (bigHead) paras = [dxPara(bigHead.head, { sz: DOCX_SZ_SEC, font: '方正小标宋_GBK', align: 'center' })]
         .concat(dxTextParas(bigHead.rest, { sz: DOCX_SZ_BODY, align: 'center' }));
       else paras = dxTextParas(text, { sz: DOCX_SZ_BODY });
       trs += '<w:tr>' + dxCell(paras, { span: 2, w: DOCX_W_TOTAL }) + '</w:tr>';
     } else if (k === 'r') {
+      const lab = String(r[1] || '');
+      const normLab = String(lab).replace(/[\s，。、；：:（）()【】\[\]\/\\·\-—]/g, '');
+      const strong = check && /当事人信息|原告|被告|第三人|申请执行人|被执行人|诉讼请求|申请执行事项|答辩请求|赔偿请求|案由|执行依据/.test(normLab);
       trs += '<w:tr>'
-        + dxCell([dxPara(String(r[1] || ''), { align: 'center', sz: DOCX_SZ_BODY })], { w: DOCX_W_LAB, vAlign: 'center' })
-        + dxCell(dxTextParas(String(r[2] || ''), { sz: DOCX_SZ_BODY }), { w: DOCX_W_VAL })
+        + dxCell([dxPara(lab, { align: 'center', sz: DOCX_SZ_BODY, bold: strong })], { w: DOCX_W_LAB, vAlign: 'center' })
+        + dxCell(dxTextParas(String(r[2] || ''), { sz: strong ? DOCX_SZ_SEC : DOCX_SZ_BODY, bold: strong }), { w: DOCX_W_VAL })
         + '</w:tr>';
     }
   });
@@ -5545,10 +5652,10 @@ function docxBuildBlob(bodyXml) {
   ]);
 }
 /* 一个文书对象 → docx Blob（官方要素表走表格，其余走段落） */
-function docxBlobForDoc(doc, titleText) {
+function docxBlobForDoc(doc, titleText, opts) {
   const title = titleText || (doc && (doc.title || doc.name)) || '法律文书';
   if (doc && doc.rows && doc.rows.length) {
-    return docxBuildBlob(docxTableBodyXml(doc.title || title, doc.rows, doc.signs, doc.data || {}));
+    return docxBuildBlob(docxTableBodyXml(doc.title || title, doc.rows, doc.signs, doc.data || {}, opts));
   }
   /* 传统式等纯文本文书：正文自带标题行，不再另加标题段落，避免顶部多一行 */
   return docxBuildBlob(docxTextBodyXml('', (doc && doc.text) || ''));
@@ -5819,83 +5926,6 @@ function restoreCase(id) {
   toast('案件已恢复');
 }
 
-</script>
-
-<script>
-/* 链接预填（只增不改的补丁）：?m=素材 & cause=案由 & mode=文书类型 & z=1（gzip+base64url）
-   点开链接即把素材填入「材料撰写」、选好案由并跳到该页签。 */
-(function () {
-  function param(name) {
-    var src = String(location.search || '').replace(/^\?/, '') + '&' + String(location.hash || '').replace(/^#/, '');
-    var m = new RegExp('[&]' + name + '=([^&#]*)').exec('&' + src);
-    if (!m) return '';
-    try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { return ''; }
-  }
-  function bytes(b64) {
-    var s = String(b64).replace(/-/g, '+').replace(/_/g, '/');
-    var pad = s.length % 4 ? new Array(5 - (s.length % 4)).join('=') : '';
-    var bin = atob(s + pad);
-    var out = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  function toastSafe(msg) { try { toast(msg); } catch (e) { } }
-  function text() {
-    var mat = param('m');
-    if (!mat) return Promise.resolve('');
-    if (param('z') !== '1') return Promise.resolve(mat);
-    if (typeof DecompressionStream !== 'function') {
-      toastSafe('此浏览器不支持链接解压，请改用明文链接');
-      return Promise.resolve('');
-    }
-    try {
-      var stream = new Blob([bytes(mat)]).stream().pipeThrough(new DecompressionStream('gzip'));
-      return new Response(stream).text().catch(function () {
-        toastSafe('链接里的素材解压失败，请改用明文链接');
-        return '';
-      });
-    } catch (e) {
-      toastSafe('链接里的素材解压失败，请改用明文链接');
-      return Promise.resolve('');
-    }
-  }
-  function fill(mat, cause, mode) {
-    if (!String(mat || '').trim()) return false;
-    try { if (typeof setDraftMode === 'function') setDraftMode(mode || 'complaint', true); } catch (e) { }
-    var t = document.getElementById('draftMaterial');
-    if (t) t.value = mat;
-    var cm = document.getElementById('caseMaterial');
-    if (cm && !String(cm.value || '').trim()) cm.value = mat;
-    if (cause) {
-      var sel = document.getElementById('caseTypeSel');
-      if (sel) {
-        var has = Array.prototype.slice.call(sel.options).some(function (o) { return o.value === cause; });
-        if (!has) {
-          var o = document.createElement('option');
-          o.value = cause; o.textContent = cause;
-          sel.appendChild(o);
-        }
-        sel.value = cause;
-        try {
-          currentDraft.caseType = cause;
-          currentDraft.caseTypeSource = 'manual';
-          if (typeof renderElemFactFields === 'function' && typeof elemKeyOf === 'function') renderElemFactFields(elemKeyOf(cause));
-          if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(currentDraft.mode);
-          if (typeof rememberCaseType === 'function') rememberCaseType(cause);
-        } catch (e) { }
-      }
-    }
-    try { if (typeof goTab === 'function') goTab('draft'); } catch (e) { }
-    return true;
-  }
-  function run() {
-    var cause = param('cause');
-    var mode = param('mode') || 'complaint';
-    text().then(function (mat) { fill(mat, cause, mode); }).catch(function () { });
-  }
-  if (document.readyState === 'complete') setTimeout(run, 0);
-  else window.addEventListener('load', function () { setTimeout(run, 0); });
-})();
 </script>
 </body>
 </html>
