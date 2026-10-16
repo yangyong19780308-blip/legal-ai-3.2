@@ -280,7 +280,12 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
     <textarea id="draftMaterial" placeholder="把案情、诉求、判决书全文或想办的事贴进来，越详细越好。&#10;例如：原告张三，2023年6月借给被告李四5万元，约定月息1分，2024年6月到期未还，多次催收无果，有借条和转账记录……"></textarea>
     <div class="btnrow">
       <button class="btn btn-primary" id="btnDraftStart" onclick="draftAnalyze()">🚀 AI 分析并生成</button>
+      <button class="btn btn-line btn-sm" onclick="importMaterialFile()">📎 导入素材文件（txt/md）</button>
+      <button class="btn btn-line btn-sm" onclick="pasteMaterialFromClipboard()">📋 读剪贴板</button>
       <button class="btn btn-ghost" onclick="clearDraft()">🗑 清空</button>
+    </div>
+    <div class="sub" style="margin-top:4px">
+      也可以把 DeepSeek Harness 等桌面模型生成的文本/文件<b>直接拖到上面的素材框里</b>，再手选案由 → 生成。
     </div>
   </div>
 
@@ -873,7 +878,8 @@ async function callLLM(messages, opts) {
   const waitAbortable = async ms => {
     try { await abortableSleep(ms, ctrl); } catch (ab) { throw abortErr(); }
   };
-  const WAITS = window.__WAITS || { overload: [10000, 25000], generic: [5000, 12000], err: [2000, 5000] };
+  /* 网络类失败多给几次机会（2026-10-16：实测偶发 "Failed to fetch"，一两次抖动就整篇空白，代价太大） */
+  const WAITS = window.__WAITS || { overload: [10000, 25000, 30000], generic: [5000, 12000, 20000], err: [1500, 4000, 8000, 12000] };
   const COOLDOWN = { account: 45000, quota: 60000, overload: 30000, generic: 20000 };
   let lastRate = null;
   let lastErr = null;
@@ -908,7 +914,8 @@ async function callLLM(messages, opts) {
           await waitAbortable(wait);
           continue;
         }
-        lastErr = new Error('网络请求失败：' + e.message);
+        lastErr = new Error('网络请求失败（' + PROVIDERS[cp].label + '，已自动重试 ' + (WAITS.err.length) + ' 次）：' + e.message
+          + '　→ 先点「🔄 重新分析」再试；持续失败就检查网络，或到「设置」切换到另一个通道（如智谱免费通道）。');
         return null;
       }
       if (!res.ok) {
@@ -1202,6 +1209,66 @@ function saveDraftToCase() {
 }
 
 /* ==================== 材料撰写 ==================== */
+/* ===== 素材导入通道（2026-10-16）：桌面模型（DeepSeek Harness 等）生成的文本一键进料 =====
+   ① 拖文件/拖文本到素材框；② 「导入素材文件」；③ 「读剪贴板」。案由仍以你手选为准。 */
+function setMaterialText(t) {
+  const el = $('draftMaterial');
+  const txt = String(t == null ? '' : t);
+  if (el) el.value = txt;
+  currentDraft.material = txt;
+}
+function importMaterialFile() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.txt,.md,.markdown,.json,.csv,text/plain';
+  inp.onchange = () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => { setMaterialText(String(fr.result || '')); toast('已导入素材：' + f.name + '（' + (fr.result || '').length + ' 字）'); };
+    fr.readAsText(f, 'utf-8');
+  };
+  inp.click();
+}
+function pasteMaterialFromClipboard() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) { toast('这个浏览器不支持直接读剪贴板，请在素材框按 Ctrl+V'); return; }
+  navigator.clipboard.readText().then(t => {
+    if (t && t.trim()) { setMaterialText(t); toast('已从剪贴板读入素材（' + t.length + ' 字）'); }
+    else toast('剪贴板是空的');
+  }).catch(() => toast('浏览器未授权读取剪贴板，请在素材框按 Ctrl+V'));
+}
+/* 拖拽进料：支持文件（txt/md/json）与直接拖文本 */
+function bindMaterialDrop() {
+  const el = $('draftMaterial');
+  if (!el) return;
+  ['dragenter', 'dragover'].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.style.borderColor = '#1677ff'; }));
+  ['dragleave', 'drop'].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.style.borderColor = ''; }));
+  el.addEventListener('drop', e => {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    const f = dt.files && dt.files[0];
+    if (f) {
+      const fr = new FileReader();
+      fr.onload = () => { setMaterialText(String(fr.result || '')); toast('已导入素材文件：' + f.name); };
+      fr.readAsText(f, 'utf-8');
+      return;
+    }
+    const t = dt.getData('text');
+    if (t) { setMaterialText(el.value ? (el.value + '\n' + t) : t); toast('已把拖入的文本追加到素材'); }
+  });
+  /* 整个「材料撰写」卡片也可以接收拖入（方便从桌面直接拖文件过来） */
+  const card = el.closest ? el.closest('.card') : null;
+  if (card && card !== el) {
+    ['dragover', 'drop'].forEach(ev => card.addEventListener(ev, e => e.preventDefault()));
+    card.addEventListener('drop', e => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      const fr = new FileReader();
+      fr.onload = () => { setMaterialText(String(fr.result || '')); toast('已导入素材文件：' + f.name); };
+      fr.readAsText(f, 'utf-8');
+    });
+  }
+}
 const MODE_NAMES = {
   complaint: '起诉状（要素式）', answer: '答辩状', exec: '强制执行申请书（要素式）',
   petition: '信访反映材料', change: '变更诉讼请求申请书', generic: '其他文书'
@@ -3524,7 +3591,8 @@ function clearLedger() {
 }
 
 function exportAll() {
-  const blob = new Blob(['\ufeff' + JSON.stringify(state, null, 2)], { type: 'application/json' });
+  /* 不再加 BOM：带 BOM 的 JSON 再导入时 JSON.parse 会直接报错（2026-10-16 实测） */
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = '法务AI3.2_数据备份_' + Date.now() + '.json';
@@ -3539,7 +3607,8 @@ function importAll(ev) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const saved = JSON.parse(reader.result);
+      /* 兼容旧备份：去掉 BOM 与首尾空白再解析，保证老文件也能导入 */
+      const saved = JSON.parse(String(reader.result || '').replace(/^\ufeff/, '').trim());
       // v3.3：旧版 v1 备份导入时自动迁移，v3 数据规范化后接管
       state = ensureV3State(saved);
       saveState();
@@ -3582,6 +3651,8 @@ renderGovernGrid();
 applyPreferences();
 const elemCourtEl = document.getElementById('elemCourt');
 if (elemCourtEl) elemCourtEl.addEventListener('change', () => rememberCourt(elemCourtEl.value));
+/* 素材框支持拖入文件/文本（把桌面模型生成的内容直接拖进来，2026-10-16） */
+if (typeof bindMaterialDrop === 'function') bindMaterialDrop();
 
 /* ==================== 官方要素式模板渲染（67类示范文本 · 外框表格） ==================== */
 
