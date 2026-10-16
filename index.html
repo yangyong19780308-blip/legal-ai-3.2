@@ -4504,6 +4504,31 @@ function amounts(s) {
   return String(s || '').match(/[0-9][0-9,，.]*\s*(?:元|万元)/g) || [];
 }
 
+/* ===== 「请求依据／诉请依据／法律依据」取数（2026-10-16 用户反馈：素材里明明写了民法典条款，成稿却是空的）=====
+   官方这类行的写法有四种：① `合同约定：／法律规定：`；② 只有一行提示（如"（法律及司法解释的规定，要写明具体条文）"）；
+   ③ 模板为空；④ 自诉状那种长标签里嵌着"…的法律依据"。旧逻辑只在模板含"法律规定："时才填，所以大多留空。
+   这里统一取数：标签含"依据/法律"的案由要素 → 素材/请求/要素里出现的《法律》第…条 → 合并去重。 */
+function elemBasisText(data) {
+  const facts = ((data && data.facts) || []).filter(f => f && String(f.content || '').trim());
+  const out = [];
+  facts.forEach(f => {
+    const n = elemNormKey(f.label || '');
+    if (/依据|法律|司法解释/.test(n)) out.push(String(f.content).trim());
+  });
+  const pool = [String((data && data.material) || ''), ((data && (data.claims || [])) || []).join(' '),
+    facts.map(f => String(f.content || '')).join(' ')].join(' ');
+  /* 抽"《…》第…条"这类引用（含"之X"、多条款连写、"依据/根据"前缀） */
+  const laws = pool.match(/[《][^》]{2,40}[》](?:[^，。；\n]{0,24}?第[一二三四五六七八九十百千零0-9]+条(?:之[一二三四五六七八九十]+)?)*/g) || [];
+  laws.forEach(l => out.push(l.trim()));
+  const merged = out.join('；').replace(/[；;]{2,}/g, '；').replace(/^[；;。\s]+/, '').trim();
+  /* 去重：被更长片段包含的短片段丢掉（"依据《民法典》第六百六十七条…" 与裸引用只留一条） */
+  const segs = merged.split('；').map(s => s.trim()).filter(Boolean);
+  const uniq = segs.filter((s, i) => !segs.some((o, j) => j !== i && o.length > s.length && o.indexOf(s) >= 0));
+  const seen = {};
+  uniq.forEach(s => { seen[s] = 1; });
+  return Object.keys(seen).join('；').slice(0, 600);
+}
+
 /* ==================== 强制执行/申请类「执行依据信息」块取数（2026-10-11） ====================
    官方行：执行依据作出机构 / 案 由 / 文书号 / 生效日期 / 执行依据判项主文。
    旧逻辑的毛病：① 「案 由」写死成 data.caseType，而 exec 模式的 caseType 只是"申请类型"
@@ -4977,10 +5002,24 @@ function fillLayoutContent(label, content, data, elements) {
     const v = String(total.content || '').trim();
     if (v) { t = v; ownFilled = true; }
   }
-  if (n.includes('依据')) {   // 请求依据／答辩依据／请求承担责任的依据…都用同一处法律依据
-    if (basis) {
-      const v = String(basis.content || '').trim();
-      if (v) { t = t.replace(/(法律规定：)\s*/, '$1' + v); ownFilled = true; }
+  if (/依据|法律及司法解释|法律依据/.test(n)) {
+    /* 请求依据／诉请依据／请求承担责任的依据／其他损失的依据…都用同一处法律依据；
+       适配四种模板写法（含"法律规定："槽／只有提示文字／模板为空／长标签），不再只在一种写法下才填。 */
+    const v = (typeof elemBasisText === 'function') ? elemBasisText(data) : (basis ? String(basis.content || '').trim() : '');
+    if (v) {
+      if (t.indexOf('法律规定：') >= 0) {
+        /* 合同约定部分：素材里有"合同/约定/协议"的句子就放到合同约定后面，其余放法律规定后面 */
+        const segs = v.split('；').map(s => s.trim()).filter(Boolean);
+        const contract = segs.filter(s => /合同|约定|协议/.test(s) && !/《/.test(s)).join('；');
+        const legal = segs.filter(s => !(contract && contract.indexOf(s) >= 0)).join('；');
+        if (t.indexOf('合同约定：') >= 0 && contract) t = t.replace(/(合同约定：)\s*/, '$1' + contract + '；');
+        t = t.replace(/(法律规定：)\s*/, '$1' + (legal || v));
+      } else if (t.trim()) {
+        t = t.replace(/[\s　]*$/, '') + '\n' + v;   /* ②③④：有提示文字就在其后另起一行，模板为空就直接写 */
+      } else {
+        t = v;
+      }
+      ownFilled = true;
     }
   }
   if (n.includes('证据清单') && data.evidence && data.evidence.length) {
