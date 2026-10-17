@@ -157,6 +157,40 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
 @media (max-width:720px){
   .ck-grid{grid-template-columns:1fr}
 }
+/* AI 助手（对话式问答，2026-10-16 新增页签） */
+.chat-box{background:#f7f9fb;border:1px solid var(--line);border-radius:12px;padding:12px;height:clamp(280px,46vh,440px);overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.chat-msg{display:flex;gap:8px;align-items:flex-start}
+.chat-col{min-width:0;max-width:86%}
+.chat-msg .av{flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:#e8eef4;display:flex;align-items:center;justify-content:center;font-size:15px}
+.chat-bubble{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+.chat-msg.me{flex-direction:row-reverse}
+.chat-msg.me .av{background:var(--primary);color:#fff}
+.chat-msg.me .chat-bubble{background:#eaf3f8;border-color:#c9e2f0}
+.chat-tools{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.chat-tools button{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 9px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit}
+.chat-tools button:hover{color:var(--primary);border-color:var(--primary2)}
+.chat-input{display:flex;gap:8px;align-items:stretch;margin-top:12px}
+.chat-input textarea{flex:1;height:76px;min-height:76px;resize:vertical;line-height:1.6}
+.chat-input .chat-btns{display:flex;flex-direction:column;gap:8px}
+.chat-empty{color:var(--muted);font-size:13px;text-align:center;padding:22px 8px;line-height:1.9}
+.chat-typing{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+.chat-typing .spin{width:14px;height:14px;border-width:2px}
+/* 页签改成 dola.com 入口（2026-10-16）：按钮用 <a> 实现、外站可页内嵌 */
+a.btn{text-decoration:none}
+.dola-frame{display:block;width:100%;height:min(70vh,640px);border:1px solid var(--line);border-radius:10px;background:#fff}
+details.card>summary{cursor:pointer;color:var(--primary);font-weight:600;font-size:16px;list-style:none}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:'▸ '}
+details.card[open]>summary::before{content:'▾ '}
+@media (max-width:720px){
+  .chat-col{max-width:100%}
+  .chat-input{flex-wrap:wrap}
+  .chat-input textarea{height:64px;min-height:64px}
+  .chat-input .chat-btns{flex-direction:row;width:100%}
+  .chat-input .chat-btns .btn{flex:1}
+  .dola-frame{height:min(60vh,460px)}
+  .chat-box{height:clamp(240px,42vh,380px)}
+}
 </style>
 </head>
 
@@ -174,6 +208,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
   <button data-tab="draft">📝 材料撰写</button>
   <button data-tab="evidence">🧾 证据分析</button>
   <button data-tab="research">📚 法律研究</button>
+  <button data-tab="assistant">🤖 AI 助手</button>
   <button data-tab="flow">🗺 诉讼流程</button>
   <button data-tab="govern">🏘 基层治理</button>
   <button data-tab="settings">⚙️ 模型与费用</button>
@@ -188,6 +223,7 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
       <div class="quick" onclick="goTab('draft')"><div class="ic">📝</div><div class="nm">材料撰写</div><div class="ds">诉状·答辩·执行·信访</div></div>
       <div class="quick" onclick="goTab('evidence')"><div class="ic">🧾</div><div class="nm">证据分析</div><div class="ds">证据清单·质证意见</div></div>
       <div class="quick" onclick="goTab('research')"><div class="ic">📚</div><div class="nm">法律研究</div><div class="ds">法规·实务问答</div></div>
+      <div class="quick" onclick="goTab('assistant')"><div class="ic">🤖</div><div class="nm">AI 助手</div><div class="ds">外接 Dola·随时问</div></div>
       <div class="quick" onclick="goTab('flow')"><div class="ic">🗺</div><div class="nm">诉讼流程</div><div class="ds">阶段指引·材料清单</div></div>
       <div class="quick" onclick="goTab('govern')"><div class="ic">🏘</div><div class="nm">基层治理</div><div class="ds">宅基地·土地·邻里等</div></div>
       <div class="quick" onclick="goTab('settings')"><div class="ic">⚙️</div><div class="nm">模型与费用</div><div class="ds">多模型·用量台账</div></div>
@@ -451,6 +487,49 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
   <div id="rsResult"></div>
 </section>
 
+<!-- ==================== AI 助手（dola.com 入口，2026-10-16 用户改定） ==================== -->
+<section id="tab-assistant" class="tab">
+  <div class="card">
+    <h2>🤖 AI 助手 <small>入口：dola.com（站外 AI 问答）</small></h2>
+    <div class="sub">
+      这个页签做的是入口，不再占用本机模型额度：点按钮去 dola.com 提问。<br>
+      注意 dola.com 是站外站点，登录与对话内容都由它自己负责；案情里涉及身份证号、手机号、住址等敏感信息时，贴过去之前先想一下。
+    </div>
+    <div class="btnrow">
+      <a class="btn btn-primary" id="dolaOpenBtn" href="https://dola.com" target="_blank" rel="noopener noreferrer">🌐 打开 dola.com（新标签）</a>
+      <button class="btn btn-line" id="btnDolaEmbed" onclick="toggleDolaEmbed()">⬇ 在页面里内嵌打开</button>
+    </div>
+    <div id="dolaEmbedWrap" style="display:none">
+      <div class="hint" style="margin:10px 0 6px">
+        内嵌区一片空白 = dola.com 不允许被别的网页嵌进来（对方的安全策略，我们改不了），点上面的按钮在新标签打开就行；手机上建议直接用新标签。
+      </div>
+      <div id="dolaFrameBox"></div>
+    </div>
+  </div>
+
+  <details class="card" id="builtinChatCard">
+    <summary>备用：用内置对话（走本机配好的模型与密钥）</summary>
+    <div class="sub" style="margin-top:10px">
+      没有 dola.com 账号、或想用自己在「⚙️ 模型与费用」里配好的模型时用这个；消耗的是那个通道的额度，对话存在本机。
+    </div>
+    <div class="chat-box" id="aiChatMsgs"></div>
+    <div class="chat-input">
+      <textarea id="aiChatInput" placeholder="问我任何法律问题…&#10;例如：借条没写利息，还能要利息吗？"></textarea>
+      <div class="chat-btns">
+        <button class="btn btn-primary" id="btnAiSend" onclick="aiSend()">发送</button>
+        <button class="btn btn-ghost btn-sm" onclick="aiClearChat()">🗑 清空</button>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <button class="chip" data-q="借款利息超过多少不受法律保护？">利息上限</button>
+      <button class="chip" data-q="民间借贷诉讼时效是几年？从哪天起算？">诉讼时效</button>
+      <button class="chip" data-q="强制执行申请要准备哪些材料？">申请执行</button>
+      <button class="chip" data-q="农民工讨薪有哪些合法途径？">讨薪途径</button>
+    </div>
+    <div class="hint">电脑上 Enter 发送、Shift+Enter 换行；手机上 Enter 换行，点「发送」发出。回答下方点「📝 用在材料撰写」可把结论带到素材框，接着生成正式文书。</div>
+  </details>
+</section>
+
 <!-- ==================== 诉讼流程 ==================== -->
 <section id="tab-flow" class="tab">
   <div class="card">
@@ -605,6 +684,8 @@ const DEFAULT_STATE = {
   cases: [],
   documents: {},
   ledger: [],
+  /* AI 助手对话记录（2026-10-16 新增「🤖 AI 助手」页签，随导出备份一起走） */
+  chat: [],
   /* 用户偏好（2026-10-11 用户要求：记住常用选择，下次自动带出） */
   preferences: { lastMode: 'complaint', lastCaseType: '', lastCourt: '', recentCaseTypes: [] }
 };
@@ -1208,6 +1289,62 @@ function saveDraftToCase() {
   toast('已存入案件档案');
 }
 
+/* ===== URL 投料通道（2026-10-16）：外部智能体把素材拼进链接，打开即已填好 =====
+   支持（查询串与 #hash 都认）：
+     ?material=素材文本            （短素材，URL 编码）
+     ?material64=<base64url>       （长素材，UTF-8 → base64，推荐）
+     &caseType=民间借贷纠纷         （可选：自动选中该案由，并记为"手选"优先）
+     &court=涡阳县人民法院          （可选）
+     &auto=1                      （可选：填好并选好案由后自动开始分析生成）
+   例（本地文件页）：file:///.../index.html?material64=5rWL6K+V&caseType=民间借贷纠纷
+   例（线上）：      https://yangyong19780308-blip.github.io/legal-ai-3.2/?material64=...&caseType=...&auto=1 */
+function b64ToUtf8(s) {
+  try {
+    const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch (e) { return ''; }
+}
+function applyIncomingMaterial() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const h = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    const get = k => q.get(k) || h.get(k) || '';
+    const mat = get('material64') ? b64ToUtf8(get('material64')) : (get('material') ? decodeURIComponent(get('material')) : '');
+    const ct = String(get('caseType') || '').trim();
+    const court = String(get('court') || '').trim();
+    if (mat) {
+      setMaterialText(mat);
+      const note = $('draftPrepText');
+      const box = $('draftPrep');
+      if (note && box) {
+        box.style.display = '';
+        note.innerHTML = '<div class="ok-box">已通过链接投料：素材 ' + mat.length + ' 字已填入「③ 粘贴素材」'
+          + (ct ? '，案由已按链接选为「' + ct + '」' : '') + '。点「🚀 AI 分析并生成」即可。</div>';
+      }
+      toast('已通过链接投料（素材 ' + mat.length + ' 字）');
+    }
+    if (ct) {
+      const sel = $('caseTypeSel');
+      if (sel) {
+        if (!Array.prototype.slice.call(sel.options).some(o => o.value === ct)) {
+          const opt = document.createElement('option'); opt.value = ct; opt.textContent = ct; sel.appendChild(opt);
+        }
+        sel.value = ct;
+        currentDraft.caseType = ct;
+        currentDraft.caseTypeSource = 'manual';
+        renderElemFactFields(elemKeyOf(ct));
+        if (typeof applyDraftModeLabels === 'function') applyDraftModeLabels(currentDraft.mode);
+      }
+    }
+    if (court) { const c = $('elemCourt'); if (c) c.value = court; }
+    if (mat && ct && get('auto') === '1') {
+      goTab('draft');
+      setTimeout(() => { try { draftAnalyze(); } catch (e) {} }, 600);
+    }
+  } catch (e) { console.warn('URL 投料失败', e); }
+}
 /* ==================== 材料撰写 ==================== */
 /* ===== 素材导入通道（2026-10-16）：桌面模型（DeepSeek Harness 等）生成的文本一键进料 =====
    ① 拖文件/拖文本到素材框；② 「导入素材文件」；③ 「读剪贴板」。案由仍以你手选为准。 */
@@ -2524,7 +2661,10 @@ async function runExtractFill() {
     : fam === 'compensation' ? '赔偿请求（项目与金额）'
       : fam === 'answer' ? '答辩请求'
         : '诉讼请求';
-  const prompt = '你是法律文书要素提取专家。请从下面的案件素材中提取撰写' + docName + '所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
+  /* 必须是 let：下面有两处 prompt += （labels 提示 + 素材），用 const 会抛
+     TypeError: Assignment to constant variable，整条“重新提取要素/分析没回 JSON 时的兜底”就断了。
+     2026-10-17 用户报“法务AI3.2无法使用”，报错即此。 */
+  let prompt = '你是法律文书要素提取专家。请从下面的案件素材中提取撰写' + docName + '所需的全部要素，只输出一个 JSON 对象（不要 Markdown 代码块，不要解释）。\n' +
     caseHint +
     'JSON 结构：\n' +
     '{\n' +
@@ -3179,6 +3319,16 @@ function normalizeV3Case(c) {
   return o;
 }
 
+/* AI 助手对话记录（2026-10-16）：只认 user/assistant 两种角色，条数与单条长度都设上限，
+   防止 localStorage 被长对话写满；老数据里没有这个字段时返回空数组。 */
+function normalizeV3Chat(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content)
+    .slice(-60)
+    .map(m => ({ role: m.role, content: m.content.slice(0, 20000), t: m.t || Date.now() }));
+}
+
 function ensureV3State(input) {
   const src = (input && typeof input === 'object') ? input : {};
   let base = src;
@@ -3194,6 +3344,8 @@ function ensureV3State(input) {
     cases: Array.isArray(base.cases) ? base.cases.map(normalizeV3Case).filter(Boolean) : [],
     documents: (base.documents && typeof base.documents === 'object' && !Array.isArray(base.documents)) ? base.documents : {},
     ledger: Array.isArray(base.ledger) ? base.ledger : [],
+    /* AI 助手对话（2026-10-16）：字段白名单里要显式保留，否则刷新就丢 */
+    chat: normalizeV3Chat(base.chat),
     /* 用户偏好：上次的文书类型/案由/法院 + 常用案由（最近使用的若干条） */
     preferences: {
       lastMode: (base.preferences && base.preferences.lastMode) || 'complaint',
@@ -3653,6 +3805,8 @@ const elemCourtEl = document.getElementById('elemCourt');
 if (elemCourtEl) elemCourtEl.addEventListener('change', () => rememberCourt(elemCourtEl.value));
 /* 素材框支持拖入文件/文本（把桌面模型生成的内容直接拖进来，2026-10-16） */
 if (typeof bindMaterialDrop === 'function') bindMaterialDrop();
+/* URL 投料：?material64=…&caseType=…&auto=1（外部智能体可直接把链接给用户打开） */
+if (typeof applyIncomingMaterial === 'function') applyIncomingMaterial();
 
 /* ==================== 官方要素式模板渲染（67类示范文本 · 外框表格） ==================== */
 
@@ -6035,6 +6189,235 @@ function restoreCase(id) {
   renderCases();
   toast('案件已恢复');
 }
+
+/* ===== 法务AI 3.2 · AI 助手页签（2026-10-16） =====
+   页签形态（用户当天改定）：本页签 = **dola.com 的入口**（新标签打开 / 页面内嵌），
+   不占用本机模型额度；原来那套内置对话收进页签底部的「备用」折叠块，功能一行没删。
+   设计纪律：
+   1) 只走全站统一的 callLLM（多模型切换、限流退避、费用台账、取消键全部复用），不另起一套请求；
+   2) 对话存在 state.chat 里，随「⚙️ 模型与费用 → 导出全部数据（JSON）」一起备份；
+   3) 只把最近 8 轮带进上下文，省 token，也避免整段被截；
+   4) 每条回答都能「📋 复制」或「📝 用在材料撰写」，顺手下接正式文书。 */
+
+/* 站外入口地址：以后换域名只改这一处 */
+const DOLA_URL = 'https://dola.com';
+
+/* 页面内嵌：点一下才插入 iframe（不在进页签时就加载第三方页面）；
+   对方若用 X-Frame-Options / CSP 禁止内嵌，内嵌区会是空白，按提示改用新标签。 */
+function toggleDolaEmbed() {
+  const wrap = $('dolaEmbedWrap');
+  const box = $('dolaFrameBox');
+  const btn = $('btnDolaEmbed');
+  if (!wrap || !box) return;
+  const show = wrap.style.display === 'none';
+  wrap.style.display = show ? '' : 'none';
+  if (btn) btn.textContent = show ? '⬆ 收起内嵌' : '⬇ 在页面里内嵌打开';
+  if (show && !box.firstChild) {
+    const f = document.createElement('iframe');
+    f.className = 'dola-frame';
+    f.src = DOLA_URL;
+    f.title = 'Dola';
+    f.setAttribute('loading', 'lazy');
+    f.setAttribute('referrerpolicy', 'no-referrer');
+    box.appendChild(f);
+  }
+}
+
+const AI_CHAT_TURNS = 8;         /* 带进上下文的最近轮数（一问一答算一轮） */
+const AI_CHAT_KEEP = 60;         /* 本地保留的消息条数，超出丢最早的 */
+/* 单条消息上限只用来防“极端长文把 localStorage 写满”，不能小到把回答切掉：
+   助手回答长起来两三千字很常见，切一半给用户看属于成稿质量问题。 */
+const AI_CHAT_MAX_CHARS = 20000;
+
+const SYS_ASSISTANT = '你是“法务AI 3.2”的随身法律助手，服务对象是基层法律工作者和普通群众。要求：'
+  + '1）用大白话讲清楚：先给结论，再讲依据和下一步怎么做；'
+  + '2）引用法律、行政法规、司法解释必须真实存在，写清名称与条文号，拿不准就直说“不确定”，不要编造；'
+  + '3）不编造事实、金额、案号；必须由用户补充信息才能判断的，直接把要问的问出来；'
+  + '4）涉及具体纠纷时提醒关键期限（诉讼时效、举证期限、上诉期、申请执行期限等）和主要风险；'
+  + '5）分点作答，便于手机阅读；'
+  + '6）回答最后单独一行写“本回答由 AI 生成，仅供参考，不构成法律意见”。';
+
+let aiBusy = false;
+
+function aiChatState() {
+  if (!Array.isArray(state.chat)) state.chat = [];
+  return state.chat;
+}
+/* 轻量渲染：先转义再只认 **加粗**；换行交给 CSS 的 white-space:pre-wrap */
+function aiRichText(s) {
+  return escHtml(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+}
+function aiEmptyHtml() {
+  return '<div class="chat-empty">👋 我是法务AI 助手，可以连续追问。<br>'
+    + '问法条、问流程、问“这事能不能起诉”“还缺什么材料”都行。<br>'
+    + '（首次使用请先到「⚙️ 模型与费用」填好 API 密钥）</div>';
+}
+function aiMsgHtml(m, i) {
+  const me = m.role === 'user';
+  const tools = me ? '' : '<div class="chat-tools">'
+    + '<button type="button" onclick="aiCopyMsg(' + i + ')">📋 复制</button>'
+    + '<button type="button" onclick="aiUseAsMaterial(' + i + ')">📝 用在材料撰写</button>'
+    + '</div>';
+  return '<div class="chat-msg ' + (me ? 'me' : 'ai') + '">'
+    + '<div class="av">' + (me ? '🙋' : '🤖') + '</div>'
+    + '<div class="chat-col"><div class="chat-bubble">' + (me ? escHtml(m.content) : aiRichText(m.content)) + '</div>'
+    + tools + '</div></div>';
+}
+function renderAiChat() {
+  const box = $('aiChatMsgs');
+  if (!box) return;
+  const list = aiChatState();
+  box.innerHTML = list.length ? list.map(aiMsgHtml).join('') : aiEmptyHtml();
+  aiScrollBottom();
+}
+function aiScrollBottom() {
+  const box = $('aiChatMsgs');
+  if (box) box.scrollTop = box.scrollHeight;
+}
+function aiShowTyping() {
+  const box = $('aiChatMsgs');
+  if (!box) return;
+  const d = document.createElement('div');
+  d.className = 'chat-msg ai';
+  d.id = 'aiTyping';
+  d.innerHTML = '<div class="av">🤖</div><div class="chat-col">'
+    + '<div class="chat-bubble"><span class="chat-typing"><span class="spin"></span>AI 正在思考…</span></div>'
+    + '<div class="chat-tools"><button type="button" onclick="cancelCurrentRequest()">✕ 取消</button></div>'
+    + '</div>';
+  box.appendChild(d);
+  aiScrollBottom();
+}
+function aiRemoveTyping() {
+  const d = $('aiTyping');
+  if (d) d.remove();
+}
+/* 出错不写进对话记录（刷新即消失），只给「重试 / 去设置」，避免半截记录留在档案里 */
+function aiShowError(msg) {
+  const box = $('aiChatMsgs');
+  if (!box) return;
+  const d = document.createElement('div');
+  d.className = 'chat-msg ai';
+  d.innerHTML = '<div class="av">🤖</div><div class="chat-col">'
+    + '<div class="err-box">' + escHtml(msg) + '</div>'
+    + '<div class="chat-tools">'
+    + '<button type="button" onclick="aiRetryLast()">🔁 重试</button>'
+    + '<button type="button" onclick="goTab(\'settings\')">⚙️ 去设置模型与密钥</button>'
+    + '</div></div>';
+  box.appendChild(d);
+  aiScrollBottom();
+}
+function aiBuildMessages() {
+  /* 时效、上诉期、申请执行期限都要按“今天”算，模型自己不知道今天几号，
+     所以把本机日期随系统提示词一起给它（2026-10-16 实测：不写日期，模型会按训练数据里的年份推算）。 */
+  const now = new Date();
+  const stamp = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
+  const recent = aiChatState().slice(-AI_CHAT_TURNS * 2);
+  return [{ role: 'system', content: SYS_ASSISTANT + '（今天是 ' + stamp + '，请按这个日期推算时效与期限，并提醒用户核对）' }]
+    .concat(recent.map(m => ({ role: m.role, content: String(m.content || '') })));
+}
+function aiTrimChat() {
+  const list = aiChatState();
+  while (list.length > AI_CHAT_KEEP) list.shift();
+}
+
+async function aiSend(preset) {
+  const ta = $('aiChatInput');
+  const q = String(preset != null ? preset : (ta ? ta.value : '')).trim();
+  if (aiBusy) { toast('AI 正在回答，请稍候…'); return; }
+  if (!q) { toast('请先输入问题'); if (ta) ta.focus(); return; }
+  if (!tryLock()) return;   /* 与全站共用并发锁，避免触发“输入过于频繁” */
+  aiBusy = true;
+  const btn = $('btnAiSend');
+  if (btn) btn.disabled = true;
+  const list = aiChatState();
+  list.push({ role: 'user', content: q.slice(0, AI_CHAT_MAX_CHARS), t: Date.now() });
+  aiTrimChat();
+  if (ta) ta.value = '';
+  saveState();
+  renderAiChat();
+  aiShowTyping();
+  try {
+    const r = await callLLM(aiBuildMessages(), { temp: 0.3, note: 'AI 助手' });
+    aiRemoveTyping();
+    list.push({ role: 'assistant', content: String(r.text || ''), t: Date.now() });
+    aiTrimChat();
+    saveState();
+    renderAiChat();
+  } catch (e) {
+    aiRemoveTyping();
+    if (e.needSetup) goTab('settings');
+    aiShowError(e && e.message ? e.message : 'AI 请求失败，请重试');
+  } finally {
+    aiBusy = false;
+    if (btn) btn.disabled = false;
+    unlock();
+  }
+}
+/* 重试：把最后一条问话从记录里摘出来重发，避免同一问题重复堆两条 */
+function aiRetryLast() {
+  const list = aiChatState();
+  let q = '';
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].role === 'user') { q = String(list[i].content || ''); list.splice(i, 1); break; }
+  }
+  saveState();
+  renderAiChat();
+  if (!q) { toast('没有可重试的问题'); return; }
+  aiSend(q);
+}
+function aiCopyMsg(i) {
+  const m = aiChatState()[i];
+  if (!m || !m.content) { toast('这条没有可复制的内容'); return; }
+  const text = String(m.content);
+  const done = () => toast('已复制这条回答');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+/* 把回答接到「📝 材料撰写」的素材框（接着选文书类型生成正式稿） */
+function aiUseAsMaterial(i) {
+  const m = aiChatState()[i];
+  const add = String((m && m.content) || '').trim();
+  if (!add) { toast('这条没有可用内容'); return; }
+  const ta = $('draftMaterial');
+  const old = ta ? String(ta.value || '') : '';
+  const merged = (old.trim() ? old.replace(/\s+$/, '') + '\n\n' : '') + add;
+  if (typeof setMaterialText === 'function') setMaterialText(merged);
+  else if (ta) ta.value = merged;
+  goTab('draft');
+  toast('已带到「材料撰写」的素材框（' + add.length + ' 字），选好文书类型即可生成');
+}
+function aiClearChat() {
+  const list = aiChatState();
+  if (!list.length) { toast('对话已经是空的'); return; }
+  if (!confirm('确定清空当前 AI 助手对话吗？清空后不可恢复。')) return;
+  state.chat = [];
+  saveState();
+  renderAiChat();
+  toast('已清空对话');
+}
+
+/* ---------- 初始化：常用问法、回车发送、载入历史对话 ---------- */
+(function initAiChat() {
+  /* 入口地址以 DOLA_URL 为准（body.html 里写的那份只是兜底），换域名只改上面一处 */
+  const openBtn = $('dolaOpenBtn');
+  if (openBtn) openBtn.setAttribute('href', DOLA_URL);
+  const ta = $('aiChatInput');
+  if (ta) {
+    ta.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      if (e.isComposing || e.keyCode === 229) return;       /* 中文输入法候选词回车不算发送 */
+      const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      if (coarse && !e.ctrlKey && !e.metaKey) return;        /* 手机：Enter 换行，避免误发 */
+      e.preventDefault();
+      aiSend();
+    });
+  }
+  document.querySelectorAll('#tab-assistant .chip').forEach(ch => {
+    ch.addEventListener('click', () => aiSend(ch.dataset.q));
+  });
+  renderAiChat();
+})();
 
 </script>
 </body>
