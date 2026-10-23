@@ -268,7 +268,6 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
       <h2 style="margin:0">📁 案件档案</h2>
       <button class="btn btn-primary btn-sm" onclick="toggleNewCase()">＋ 新建案件</button>
     </div>
-    <input type="text" id="caseSearch" class="fld" style="margin-top:10px" placeholder="🔍 搜索案件：名称 / 案号 / 法院 / 案由 / 标签（本地过滤）" oninput="onCaseSearch(this.value)">
     <div id="caseForm" style="display:none">
       <label class="fld">案件名称</label>
       <input type="text" id="caseTitle" placeholder="例如：张三诉李四民间借贷案">
@@ -279,7 +278,11 @@ table.elem-official .note-star{text-align:center;font-weight:700;margin:3px 0}
         <button class="btn btn-ghost" onclick="toggleNewCase(false)">取消</button>
       </div>
     </div>
-    <div id="caseList" style="margin-top:12px"></div>
+    <div id="caseListBar"></div>
+    <div id="caseListWrap">
+      <input type="text" id="caseSearch" class="fld" style="margin-top:10px" placeholder="🔍 搜索案件：名称 / 案号 / 法院 / 案由 / 标签（本地过滤）" oninput="onCaseSearch(this.value)">
+      <div id="caseList" style="margin-top:12px"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -1114,6 +1117,7 @@ function saveNewCase() {
   if (!material && !confirm('案件没有任何素材，仍要保存吗？')) return;
   const c = createV3Case({ title: title, material: material, source: 'new' });
   state.cases.unshift(c);
+  if (typeof caseListSetOpen === 'function') caseListSetOpen(true);   /* 刚建的这条要能看见 */
   saveState();
   renderCases();
   toggleNewCase(false);
@@ -1206,6 +1210,7 @@ function renderCases() {
   }
   if (!alive.length) {
     box.innerHTML = '<div class="sub" style="margin:8px 0 0">' + (state.cases.some(c => !c.deletedAt) ? '没有符合条件的案件，换个关键词试试。' : '还没有案件。点「新建案件」开始，或在「材料撰写」生成文书后一键存入。') + '</div>';
+    if (typeof renderCaseListBar === 'function') renderCaseListBar();
     if (typeof renderStats === 'function') renderStats();
     return;
   }
@@ -1221,6 +1226,7 @@ function renderCases() {
       '<button class="btn btn-red btn-sm" onclick="deleteCase(\'' + c.id + '\')">删除</button></div></div>';
   }).join('');
   if (typeof renderTrash === 'function') renderTrash();
+  if (typeof renderCaseListBar === 'function') renderCaseListBar();
   if (typeof renderStats === 'function') renderStats();
 }
 function onCaseSearch(v) {
@@ -3249,6 +3255,7 @@ function createV3Case(opts) {
 
 const STATS_PROGRESS_OPTIONS = ['待立案', '已立案', '保全中', '待开庭', '审理中', '待判决', '执行中', '已结案'];
 const STATS_COLS_STORE = 'fawu32_stats_cols';
+const CASE_LIST_STORE = 'fawu32_case_list_open';
 /* 三个时间各占一列；每格带一个三角按钮，点开只改那一项 */
 const STATS_TIME_LABELS = { registeredAt: '登记时间', filedAt: '立案时间', preservedAt: '保全时间', hearingAt: '开庭时间' };
 
@@ -3275,6 +3282,39 @@ let statsEditId = null;
 let statsEditMode = 'edit';     /* edit | new：新建时不先落库，点保存才建案 */
 let statsView = 'dashboard';   /* dashboard = 统计看板；board = 案件进度表 */
 let statsTimeTarget = null;    /* 当前展开时间菜单：{id, key} */
+let caseListOpen = null;       /* 案件台「已录入案件」是否展开；默认收起，记在本机 */
+
+/* ---------- 案件台：新建案件下面的「已录入案件」默认收起 ---------- */
+function caseListLoadOpen() {
+  if (caseListOpen === null) {
+    let v = null;
+    try { v = localStorage.getItem(CASE_LIST_STORE); } catch (e) {}
+    caseListOpen = (v === '1');
+  }
+  return caseListOpen;
+}
+function caseListSetOpen(on) {
+  caseListOpen = !!on;
+  try { localStorage.setItem(CASE_LIST_STORE, on ? '1' : '0'); } catch (e) {}
+}
+function caseListToggle() {
+  caseListSetOpen(!caseListLoadOpen());
+  renderCases();
+}
+function renderCaseListBar() {
+  const bar = $('caseListBar'), wrap = $('caseListWrap');
+  if (!bar || !wrap) return;
+  const n = (state.cases || []).filter(c => c && !c.deletedAt).length;
+  const open = (n === 0) || caseListLoadOpen();
+  bar.innerHTML = n
+    ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">'
+      + '<button class="btn btn-line btn-sm" onclick="caseListToggle()">'
+      + (open ? '▾ 收起已录入案件（' + n + ' 件）' : '▸ 已录入案件（' + n + ' 件）') + '</button>'
+      + '<span class="hint" style="margin:0">' + (open ? '已展开：可搜索、打开、删除' : '默认收起，需要查看时点开') + '</span>'
+      + '</div>'
+    : '';
+  wrap.style.display = open ? '' : 'none';
+}
 
 /* ---------- 小工具 ---------- */
 function statsPad2(n) { return n < 10 ? '0' + n : '' + n; }
